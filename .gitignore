@@ -1,0 +1,25 @@
+# Android / Gradle
+.gradle/
+.idea/
+build/
+**/build/
+local.properties
+*.iml
+
+# Never commit mailbox data or credentials
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.eml
+*.mbox
+*.pst
+*.ost
+*.json.enc
+secrets.properties
+keystore.properties
+*.jks
+*.keystore
+.env
+.env.*
