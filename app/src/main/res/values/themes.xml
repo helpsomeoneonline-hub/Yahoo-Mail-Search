@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.YahooMailSearch" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#5F01D1</item>
+        <item name="colorPrimaryVariant">#430094</item>
+        <item name="colorSecondary">#0B57D0</item>
+        <item name="android:statusBarColor">#430094</item>
+        <item name="android:navigationBarColor">#111111</item>
+    </style>
+</resources>
