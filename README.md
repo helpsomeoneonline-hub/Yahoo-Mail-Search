@@ -1,3 +1,42 @@
 # Yahoo Mail Search
 
-Android app for fast Yahoo Mail search, bulk cleanup, and saved alerts.
+Android app for searching, archiving, and safely cleaning a large Yahoo mailbox.
+
+## Storage model
+
+- Yahoo remains the live mailbox.
+- The private GitHub repository `helpsomeoneonline-hub/Yahoo-Mail-Data` is the long-term encrypted archive.
+- Email content is compressed and encrypted with AES-256-GCM before upload.
+- The archive encryption key is derived from a user-chosen passphrase with PBKDF2-HMAC-SHA256.
+- The phone keeps only a temporary search cache under Android's cache storage. It can be cleared without deleting the GitHub archive.
+- Yahoo passwords, Yahoo app passwords, GitHub tokens, and archive passphrases are never committed to GitHub.
+
+## Current v0.1 features
+
+- Connect to Yahoo IMAP over SSL.
+- Archive non-Spam/non-Trash Yahoo folders in encrypted chunks of up to 100 messages.
+- Resume synchronization using encrypted UID checkpoints stored in the private data repository.
+- Search sender, recipients, subject, body text, and attachment filenames.
+- Rebuild the temporary search cache from the encrypted GitHub archive.
+- Bulk move every message matching a search to Yahoo Trash after an explicit confirmation.
+- Keep the encrypted GitHub archive copy when Yahoo mail is moved to Trash.
+- Build a debug APK with GitHub Actions.
+
+## App setup
+
+The app asks for:
+
+1. Yahoo email address.
+2. Yahoo app password.
+3. A GitHub token that has read/write Contents access to the private `Yahoo-Mail-Data` repository.
+4. An archive passphrase of at least 8 characters.
+
+The connection values are stored locally using Android Keystore encryption. Keep a separate safe copy of the archive passphrase because it is required to decrypt the GitHub archive on another device.
+
+## Build
+
+Run the **Build Android APK** workflow in GitHub Actions. The workflow uploads `Yahoo-Mail-Search-debug` as an artifact containing `app-debug.apk`.
+
+## Important
+
+The first synchronization of a very large mailbox can take many network operations. Attachments are indexed by filename in v0.1, but attachment file bytes are not archived yet.
