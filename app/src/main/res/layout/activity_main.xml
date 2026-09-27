@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="18dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Yahoo Mail Search"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Encrypted GitHub archive • temporary phone search cache"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="#12000000"
+            android:padding="12dp"
+            android:text="Not connected." />
+
+        <ProgressBar
+            android:id="@+id/progressBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:indeterminate="true"
+            android:visibility="gone" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Connection"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/yahooEmail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Yahoo email address"
+            android:inputType="textEmailAddress"
+            android:singleLine="true" />
+
+        <EditText
+            android:id="@+id/yahooAppPassword"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Yahoo app password"
+            android:inputType="textPassword"
+            android:singleLine="true" />
+
+        <EditText
+            android:id="@+id/githubToken"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="GitHub token for Yahoo-Mail-Data"
+            android:inputType="textPassword"
+            android:singleLine="true" />
+
+        <EditText
+            android:id="@+id/archivePassphrase"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Archive encryption passphrase"
+            android:inputType="textPassword"
+            android:singleLine="true" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Keep the archive passphrase somewhere safe. It is needed to restore the encrypted archive on another phone."
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/testButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Test &amp; Save Connection" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Archive"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/syncButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Sync Yahoo Mail to GitHub" />
+
+        <Button
+            android:id="@+id/rebuildButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Rebuild Search Cache from GitHub" />
+
+        <Button
+            android:id="@+id/clearCacheButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Clear Temporary Phone Cache" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Search &amp; clean"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/searchBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Sender, subject, words in email..."
+            android:inputType="text"
+            android:singleLine="true" />
+
+        <Button
+            android:id="@+id/searchButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Search" />
+
+        <TextView
+            android:id="@+id/resultCount"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="0 matches"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/resultsText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Search results will appear here."
+            android:textIsSelectable="true" />
+
+        <Button
+            android:id="@+id/trashMatchesButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="Move All Matching Yahoo Emails to Trash" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="28dp"
+            android:layout_marginTop="8dp"
+            android:text="Moving mail to Yahoo Trash does not remove the encrypted GitHub archive copy."
+            android:textSize="12sp" />
+
+    </LinearLayout>
+</ScrollView>
