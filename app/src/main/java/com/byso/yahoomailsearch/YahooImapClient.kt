@@ -169,8 +169,8 @@ class YahooImapClient(
         val text = extractText(message, attachments).trim().take(MAX_BODY_CHARS)
         val sender = message.from?.joinToString(", ") { it.toString() }.orEmpty()
         val recipients = buildList {
-            message.getRecipients(Message.RecipientType.TO)?.let { addAll(it.map(Object::toString)) }
-            message.getRecipients(Message.RecipientType.CC)?.let { addAll(it.map(Object::toString)) }
+            message.getRecipients(Message.RecipientType.TO)?.let { addAll(it.map { address -> address.toString() }) }
+            message.getRecipients(Message.RecipientType.CC)?.let { addAll(it.map { address -> address.toString() }) }
         }.joinToString(", ")
 
         return MailRecord(
