@@ -11,6 +11,7 @@ import javax.mail.Multipart
 import javax.mail.Part
 import javax.mail.Session
 import javax.mail.Store
+import javax.mail.UIDFolder
 
 class YahooImapClient(
     private val email: String,
@@ -29,60 +30,213 @@ class YahooImapClient(
         state: SyncState,
         onBatch: (folderName: String, uidValidity: Long, records: List<MailRecord>) -> Unit,
         onCheckpoint: (folderName: String, uidValidity: Long, lastUid: Long) -> Unit,
-        onProgress: (String) -> Unit
+        onProgress: (SyncProgress) -> Unit
     ) {
         val store = connect()
         try {
             val folders = store.defaultFolder.list("*")
                 .filter { (it.type and Folder.HOLDS_MESSAGES) != 0 }
                 .filterNot { isExcludedFolder(it.fullName) }
+                .mapNotNull { it as? IMAPFolder }
 
-            folders.forEachIndexed { index, rawFolder ->
-                val folder = rawFolder as? IMAPFolder ?: return@forEachIndexed
-                onProgress("Opening ${folder.fullName} (${index + 1}/${folders.size})")
+            onProgress(
+                SyncProgress(
+                    stage = "Counting Yahoo emails...",
+                    folderCount = folders.size
+                )
+            )
+
+            val folderCounts = linkedMapOf<IMAPFolder, Int>()
+            folders.forEachIndexed { index, folder ->
+                var count = 0
+                try {
+                    folder.open(Folder.READ_ONLY)
+                    count = folder.messageCount.coerceAtLeast(0)
+                } finally {
+                    if (folder.isOpen) folder.close(false)
+                }
+                folderCounts[folder] = count
+                onProgress(
+                    SyncProgress(
+                        stage = "Counting folders...",
+                        folderName = folder.fullName,
+                        folderIndex = index + 1,
+                        folderCount = folders.size,
+                        totalMessages = folderCounts.values.sum()
+                    )
+                )
+            }
+
+            val totalMessages = folderCounts.values.sum()
+            var processedMessages = 0
+            var alreadyArchived = 0
+            var newArchived = 0
+            var uploadedBatches = 0
+
+            if (totalMessages == 0) {
+                onProgress(
+                    SyncProgress(
+                        stage = "SYNC COMPLETE",
+                        folderCount = folders.size,
+                        totalMessages = 0,
+                        processedMessages = 0,
+                        complete = true
+                    )
+                )
+                return
+            }
+
+            folders.forEachIndexed { folderIndex, folder ->
+                val folderTotal = folderCounts[folder] ?: 0
+                var folderProcessed = 0
+
+                onProgress(
+                    SyncProgress(
+                        stage = "Opening folder...",
+                        folderName = folder.fullName,
+                        folderIndex = folderIndex + 1,
+                        folderCount = folders.size,
+                        totalMessages = totalMessages,
+                        processedMessages = processedMessages,
+                        alreadyArchived = alreadyArchived,
+                        newArchived = newArchived,
+                        uploadedBatches = uploadedBatches,
+                        folderProcessed = folderProcessed,
+                        folderTotal = folderTotal
+                    )
+                )
+
+                if (folderTotal <= 0) return@forEachIndexed
+
                 folder.open(Folder.READ_ONLY)
                 try {
                     val validity = folder.uidValidity
                     val saved = state.folders[folder.fullName]
-                    var startUid =
-                        if (saved != null && saved.uidValidity == validity) saved.lastUid + 1 else 1L
+                    val savedUid =
+                        if (saved != null && saved.uidValidity == validity) saved.lastUid else 0L
 
-                    val uidNext = folder.uidNext
-                    val maxUid = if (uidNext > 0) uidNext - 1 else {
-                        val newest = if (folder.messageCount > 0) folder.getMessage(folder.messageCount) else null
-                        newest?.let { folder.getUID(it) } ?: 0L
-                    }
+                    var startSequence = 1
+                    while (startSequence <= folderTotal) {
+                        val endSequence = minOf(startSequence + MESSAGE_WINDOW - 1, folderTotal)
+                        val messages = folder.getMessages(startSequence, endSequence)
 
-                    while (startUid <= maxUid) {
-                        val endUid = minOf(startUid + UID_WINDOW - 1, maxUid)
-                        val messages = folder.getMessagesByUID(startUid, endUid).filterNotNull()
-                        if (messages.isNotEmpty()) {
+                        val uidFetch = FetchProfile().apply {
+                            add(UIDFolder.FetchProfileItem.UID)
+                        }
+                        folder.fetch(messages, uidFetch)
+
+                        val newMessages = mutableListOf<Message>()
+                        var highestUid = savedUid
+                        var oldInWindow = 0
+
+                        messages.forEach { message ->
+                            val uid = folder.getUID(message)
+                            if (uid > highestUid) highestUid = uid
+                            if (uid > savedUid) {
+                                newMessages += message
+                            } else {
+                                oldInWindow++
+                            }
+                        }
+
+                        alreadyArchived += oldInWindow
+
+                        if (newMessages.isNotEmpty()) {
+                            onProgress(
+                                SyncProgress(
+                                    stage = "Downloading ${newMessages.size} new emails...",
+                                    folderName = folder.fullName,
+                                    folderIndex = folderIndex + 1,
+                                    folderCount = folders.size,
+                                    totalMessages = totalMessages,
+                                    processedMessages = processedMessages,
+                                    alreadyArchived = alreadyArchived,
+                                    newArchived = newArchived,
+                                    uploadedBatches = uploadedBatches,
+                                    folderProcessed = folderProcessed,
+                                    folderTotal = folderTotal
+                                )
+                            )
+
                             val fetchProfile = FetchProfile().apply {
                                 add(FetchProfile.Item.ENVELOPE)
                                 add(FetchProfile.Item.FLAGS)
                                 add(FetchProfile.Item.CONTENT_INFO)
+                                add(UIDFolder.FetchProfileItem.UID)
                             }
-                            folder.fetch(messages.toTypedArray(), fetchProfile)
+                            folder.fetch(newMessages.toTypedArray(), fetchProfile)
 
-                            val records = messages.mapNotNull { message ->
+                            val records = newMessages.mapNotNull { message ->
                                 runCatching { toRecord(folder, message) }.getOrNull()
                             }.sortedBy { it.uid }
 
                             records.chunked(ARCHIVE_BATCH).forEach { batch ->
-                                if (batch.isNotEmpty()) onBatch(folder.fullName, validity, batch)
+                                if (batch.isNotEmpty()) {
+                                    onProgress(
+                                        SyncProgress(
+                                            stage = "Uploading ${batch.size} emails to GitHub...",
+                                            folderName = folder.fullName,
+                                            folderIndex = folderIndex + 1,
+                                            folderCount = folders.size,
+                                            totalMessages = totalMessages,
+                                            processedMessages = processedMessages,
+                                            alreadyArchived = alreadyArchived,
+                                            newArchived = newArchived,
+                                            uploadedBatches = uploadedBatches,
+                                            folderProcessed = folderProcessed,
+                                            folderTotal = folderTotal
+                                        )
+                                    )
+                                    onBatch(folder.fullName, validity, batch)
+                                    newArchived += batch.size
+                                    uploadedBatches++
+                                }
                             }
                         }
 
-                        onCheckpoint(folder.fullName, validity, endUid)
+                        if (highestUid > 0) {
+                            onCheckpoint(folder.fullName, validity, highestUid)
+                        }
+
+                        val windowSize = messages.size
+                        processedMessages += windowSize
+                        folderProcessed += windowSize
+
                         onProgress(
-                            "${folder.fullName}: archived through UID $endUid of $maxUid"
+                            SyncProgress(
+                                stage = "Syncing...",
+                                folderName = folder.fullName,
+                                folderIndex = folderIndex + 1,
+                                folderCount = folders.size,
+                                totalMessages = totalMessages,
+                                processedMessages = processedMessages,
+                                alreadyArchived = alreadyArchived,
+                                newArchived = newArchived,
+                                uploadedBatches = uploadedBatches,
+                                folderProcessed = folderProcessed,
+                                folderTotal = folderTotal
+                            )
                         )
-                        startUid = endUid + 1
+
+                        startSequence = endSequence + 1
                     }
                 } finally {
                     if (folder.isOpen) folder.close(false)
                 }
             }
+
+            onProgress(
+                SyncProgress(
+                    stage = "SYNC COMPLETE",
+                    folderCount = folders.size,
+                    totalMessages = totalMessages,
+                    processedMessages = totalMessages,
+                    alreadyArchived = alreadyArchived,
+                    newArchived = newArchived,
+                    uploadedBatches = uploadedBatches,
+                    complete = true
+                )
+            )
         } finally {
             runCatching { store.close() }
         }
@@ -169,8 +323,12 @@ class YahooImapClient(
         val text = extractText(message, attachments).trim().take(MAX_BODY_CHARS)
         val sender = message.from?.joinToString(", ") { it.toString() }.orEmpty()
         val recipients = buildList {
-            message.getRecipients(Message.RecipientType.TO)?.let { addAll(it.map { address -> address.toString() }) }
-            message.getRecipients(Message.RecipientType.CC)?.let { addAll(it.map { address -> address.toString() }) }
+            message.getRecipients(Message.RecipientType.TO)?.let {
+                addAll(it.map { address -> address.toString() })
+            }
+            message.getRecipients(Message.RecipientType.CC)?.let {
+                addAll(it.map { address -> address.toString() })
+            }
         }.joinToString(", ")
 
         return MailRecord(
@@ -228,7 +386,7 @@ class YahooImapClient(
     }
 
     companion object {
-        private const val UID_WINDOW = 500L
+        private const val MESSAGE_WINDOW = 500
         private const val ARCHIVE_BATCH = 100
         private const val MAX_BODY_CHARS = 500_000
     }
