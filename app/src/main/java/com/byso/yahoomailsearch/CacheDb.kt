@@ -29,6 +29,12 @@ class CacheDb(context: Context) {
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_mail_date ON mail(date_ms DESC)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_mail_sender ON mail(sender)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_mail_subject ON mail(subject)")
+        runCatching {
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_identity " +
+                    "ON mail(folder, date_ms, sender, subject)"
+            )
+        }
     }
 
     fun upsert(records: List<MailRecord>) {
