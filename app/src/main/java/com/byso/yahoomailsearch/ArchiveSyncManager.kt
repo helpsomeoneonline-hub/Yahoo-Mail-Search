@@ -20,7 +20,8 @@ class ArchiveSyncManager(
 
     fun sync(onProgress: (SyncProgress) -> Unit) {
         val key = archiveKey()
-        val state = loadState(key)
+        val hasArchiveData = github.listDirectory("archive").any { it.type == "dir" }
+        val state = if (hasArchiveData) loadState(key) else SyncState()
         val yahoo = YahooImapClient(email, yahooAppPassword)
 
         yahoo.sync(
