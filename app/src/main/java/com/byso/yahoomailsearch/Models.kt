@@ -104,3 +104,28 @@ data class MailKey(
     val folder: String,
     val uid: Long
 )
+
+
+data class SyncProgress(
+    val stage: String,
+    val folderName: String = "",
+    val folderIndex: Int = 0,
+    val folderCount: Int = 0,
+    val totalMessages: Int = 0,
+    val processedMessages: Int = 0,
+    val alreadyArchived: Int = 0,
+    val newArchived: Int = 0,
+    val uploadedBatches: Int = 0,
+    val folderProcessed: Int = 0,
+    val folderTotal: Int = 0,
+    val complete: Boolean = false
+) {
+    val percent: Int
+        get() = if (totalMessages <= 0) {
+            if (complete) 100 else 0
+        } else {
+            ((processedMessages.toDouble() / totalMessages.toDouble()) * 100.0)
+                .toInt()
+                .coerceIn(0, 100)
+        }
+}
