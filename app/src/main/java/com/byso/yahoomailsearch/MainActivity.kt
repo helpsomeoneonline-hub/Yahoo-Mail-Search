@@ -89,8 +89,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun startSync() {
         val creds = credentials() ?: return
-        runTask("Starting Yahoo → encrypted GitHub archive sync...") {
-            manager(creds).sync(::postStatus)
+        binding.syncStatsText.visibility = View.VISIBLE
+        binding.syncStatsText.text = "Preparing mailbox count..."
+        binding.progressBar.isIndeterminate = false
+        binding.progressBar.max = 100
+        binding.progressBar.progress = 0
+
+        runTask(
+            startMessage = "Counting Yahoo emails...",
+            determinate = true,
+            keepProgress = true
+        ) {
+            manager(creds).sync(::postSyncProgress)
         }
     }
 
@@ -207,8 +217,15 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun runTask(startMessage: String, task: () -> Unit) {
+    private fun runTask(
+        startMessage: String,
+        determinate: Boolean = false,
+        keepProgress: Boolean = false,
+        task: () -> Unit
+    ) {
         binding.progressBar.visibility = View.VISIBLE
+        binding.progressBar.isIndeterminate = !determinate
+        if (determinate) binding.progressBar.progress = 0
         binding.statusText.text = startMessage
         setBusy(true)
         executor.execute {
@@ -218,7 +235,7 @@ class MainActivity : AppCompatActivity() {
                 postStatus("Error: ${error.message ?: error.javaClass.simpleName}")
             } finally {
                 runOnUiThread {
-                    binding.progressBar.visibility = View.GONE
+                    if (!keepProgress) binding.progressBar.visibility = View.GONE
                     setBusy(false)
                 }
             }
@@ -236,6 +253,88 @@ class MainActivity : AppCompatActivity() {
 
     private fun postStatus(message: String) {
         runOnUiThread { binding.statusText.text = message }
+    }
+
+    private fun postSyncProgress(progress: SyncProgress) {
+        runOnUiThread {
+            binding.progressBar.visibility = View.VISIBLE
+            binding.syncStatsText.visibility = View.VISIBLE
+
+            if (progress.totalMessages > 0 || progress.complete) {
+                binding.progressBar.isIndeterminate = false
+                binding.progressBar.max = 100
+                binding.progressBar.progress = progress.percent
+            } else {
+                binding.progressBar.isIndeterminate = true
+            }
+
+            val percentText =
+                if (progress.totalMessages > 0) {
+                    String.format(
+                        Locale.getDefault(),
+                        "%.1f%%",
+                        (progress.processedMessages.toDouble() * 100.0) /
+                            progress.totalMessages.toDouble()
+                    )
+                } else if (progress.complete) {
+                    "100.0%"
+                } else {
+                    "Counting..."
+                }
+
+            binding.statusText.text =
+                if (progress.complete) {
+                    "SYNC COMPLETE — ${progress.processedMessages} / ${progress.totalMessages} emails"
+                } else {
+                    progress.stage
+                }
+
+            binding.syncStatsText.text = buildString {
+                append("Total emails found: ")
+                append(progress.totalMessages)
+                append('\n')
+                append("Processed: ")
+                append(progress.processedMessages)
+                append(" / ")
+                append(progress.totalMessages)
+                append("  (")
+                append(percentText)
+                append(")")
+                append('\n')
+                append("Already archived: ")
+                append(progress.alreadyArchived)
+                append('\n')
+                append("New emails archived this session: ")
+                append(progress.newArchived)
+                append('\n')
+                append("GitHub upload batches: ")
+                append(progress.uploadedBatches)
+
+                if (progress.folderName.isNotBlank()) {
+                    append('\n')
+                    append("Current folder: ")
+                    append(progress.folderName)
+                    if (progress.folderCount > 0) {
+                        append("  [")
+                        append(progress.folderIndex)
+                        append("/")
+                        append(progress.folderCount)
+                        append("]")
+                    }
+                    if (progress.folderTotal > 0) {
+                        append('\n')
+                        append("Folder progress: ")
+                        append(progress.folderProcessed)
+                        append(" / ")
+                        append(progress.folderTotal)
+                    }
+                }
+
+                if (progress.complete) {
+                    append("\n\n✓ ALL EMAILS IN THIS SYNC SNAPSHOT ARE COMPLETE")
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
