@@ -39,7 +39,20 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:indeterminate="true"
+            android:indeterminate="false"
+            android:max="100"
+            android:progress="0"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/syncStatsText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="#0A000000"
+            android:padding="10dp"
+            android:text="Sync progress will appear here."
+            android:textSize="13sp"
             android:visibility="gone" />
 
         <TextView
