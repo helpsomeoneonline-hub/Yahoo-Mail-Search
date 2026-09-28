@@ -15,7 +15,8 @@ import javax.mail.UIDFolder
 
 class YahooImapClient(
     private val email: String,
-    private val appPassword: String
+    private val appPassword: String,
+    private val imapHost: String = NORMAL_IMAP_HOST
 ) {
     fun testConnection() {
         val store = connect()
@@ -332,7 +333,7 @@ class YahooImapClient(
     private fun connect(): Store {
         val properties = Properties().apply {
             put("mail.store.protocol", "imaps")
-            put("mail.imaps.host", "imap.mail.yahoo.com")
+            put("mail.imaps.host", imapHost)
             put("mail.imaps.port", "993")
             put("mail.imaps.ssl.enable", "true")
             put("mail.imaps.connectiontimeout", "30000")
@@ -341,7 +342,7 @@ class YahooImapClient(
         }
         val session = Session.getInstance(properties)
         return session.getStore("imaps").apply {
-            connect("imap.mail.yahoo.com", 993, email, appPassword)
+            connect(imapHost, 993, email, appPassword)
         }
     }
 
@@ -429,6 +430,8 @@ class YahooImapClient(
     }
 
     companion object {
+        const val NORMAL_IMAP_HOST = "imap.mail.yahoo.com"
+        const val EXPORT_IMAP_HOST = "export.imap.mail.yahoo.com"
         private const val MESSAGE_WINDOW = 500
         private const val ARCHIVE_BATCH = 100
         private const val MAX_BODY_CHARS = 500_000
