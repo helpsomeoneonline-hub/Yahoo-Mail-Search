@@ -1,5 +1,12 @@
 package com.byso.yahoomailsearch
 
+import java.io.EOFException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import javax.mail.AuthenticationFailedException
+import javax.mail.FolderClosedException
+import javax.mail.MessagingException
+import javax.mail.StoreClosedException
 import javax.crypto.AEADBadTagException
 import javax.crypto.SecretKey
 
@@ -24,6 +31,52 @@ class ArchiveSyncManager(
 
     fun sync(
         mode: ArchiveSyncMode = ArchiveSyncMode.LIVE_INCREMENTAL,
+        onProgress: (SyncProgress) -> Unit
+    ) {
+        var attempt = 0
+        var latest = SyncProgress(
+            stage = if (mode == ArchiveSyncMode.FULL_EXPORT) {
+                "Preparing full Yahoo archive..."
+            } else {
+                "Preparing Yahoo live sync..."
+            }
+        )
+
+        while (true) {
+            try {
+                syncOnce(mode) { progress ->
+                    latest = progress
+                    onProgress(progress)
+                }
+                return
+            } catch (error: Throwable) {
+                if (!isTransientYahooDisconnect(error) || attempt >= MAX_RECONNECTS) {
+                    throw error
+                }
+
+                attempt++
+                val waitSeconds = minOf(3 + attempt, 15)
+                onProgress(
+                    latest.copy(
+                        stage =
+                            "Yahoo closed the connection. Reconnecting automatically " +
+                                "($attempt/$MAX_RECONNECTS) in $waitSeconds seconds...",
+                        complete = false
+                    )
+                )
+
+                try {
+                    Thread.sleep(waitSeconds * 1_000L)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw error
+                }
+            }
+        }
+    }
+
+    private fun syncOnce(
+        mode: ArchiveSyncMode,
         onProgress: (SyncProgress) -> Unit
     ) {
         val source = sourceFor(mode)
@@ -78,6 +131,39 @@ class ArchiveSyncManager(
             },
             onProgress = onProgress
         )
+    }
+
+    private fun isTransientYahooDisconnect(error: Throwable): Boolean {
+        var current: Throwable? = error
+        while (current != null) {
+            when (current) {
+                is AuthenticationFailedException -> return false
+                is FolderClosedException,
+                is StoreClosedException,
+                is SocketTimeoutException,
+                is SocketException,
+                is EOFException -> return true
+                is MessagingException -> {
+                    val message = current.message.orEmpty().lowercase()
+                    if (
+                        message.contains("folderclosed") ||
+                        message.contains("folder closed") ||
+                        message.contains("store closed") ||
+                        message.contains("connection") ||
+                        message.contains("socket") ||
+                        message.contains("timeout") ||
+                        message.contains("bye") ||
+                        message.contains("reset") ||
+                        message.contains("broken pipe") ||
+                        message.contains("eof")
+                    ) {
+                        return true
+                    }
+                }
+            }
+            current = current.cause
+        }
+        return false
     }
 
     fun rebuildCache(onProgress: (String) -> Unit) {
@@ -310,6 +396,7 @@ class ArchiveSyncManager(
     )
 
     companion object {
+        private const val MAX_RECONNECTS = 20
         private val RANGE_REGEX =
             Regex("""(\d+)-(\d+)\.enc""")
     }
