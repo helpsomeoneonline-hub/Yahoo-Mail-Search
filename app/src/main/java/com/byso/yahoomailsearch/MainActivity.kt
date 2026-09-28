@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private var sessionUnlocked = false
     private var busy = false
+    private var activeSyncMode = ArchiveSyncMode.FULL_EXPORT
 
     override fun onCreate(savedInstanceState: Bundle?) {
         applySavedTheme()
@@ -322,12 +323,36 @@ class MainActivity : AppCompatActivity() {
 
     private fun startSync() {
         val creds = credentials() ?: return
+        val prefs = getSharedPreferences(
+            AppKeys.PREFS_APP,
+            Context.MODE_PRIVATE
+        )
+        activeSyncMode =
+            if (prefs.getBoolean(AppKeys.KEY_FULL_EXPORT_COMPLETE, false)) {
+                ArchiveSyncMode.LIVE_INCREMENTAL
+            } else {
+                ArchiveSyncMode.FULL_EXPORT
+            }
+
         showTab("home")
         binding.progressBar.visibility = View.VISIBLE
         binding.progressBar.isIndeterminate = true
-        binding.syncStatsText.text = "Counting your Yahoo folders..."
-        runTask("Starting encrypted Yahoo → GitHub sync...") {
-            manager(creds).sync(::postSyncProgress)
+        binding.syncStatsText.text =
+            if (activeSyncMode == ArchiveSyncMode.FULL_EXPORT) {
+                "Preparing full Yahoo mailbox export..."
+            } else {
+                "Checking Yahoo for new mail..."
+            }
+
+        val startMessage =
+            if (activeSyncMode == ArchiveSyncMode.FULL_EXPORT) {
+                "Starting full historical Yahoo archive..."
+            } else {
+                "Starting live incremental Yahoo sync..."
+            }
+
+        runTask(startMessage) {
+            manager(creds).sync(activeSyncMode, ::postSyncProgress)
         }
     }
 
@@ -400,13 +425,20 @@ class MainActivity : AppCompatActivity() {
 
             if (progress.complete) {
                 val prefs = getSharedPreferences(AppKeys.PREFS_APP, Context.MODE_PRIVATE)
-                prefs.edit()
+                val editor = prefs.edit()
                     .putBoolean(AppKeys.KEY_INITIAL_SYNC_COMPLETE, true)
                     .putInt(AppKeys.KEY_LAST_TOTAL, progress.totalMessages)
                     .putInt(AppKeys.KEY_LAST_ARCHIVED, cache.size())
                     .putInt(AppKeys.KEY_LAST_NEW, progress.newArchived)
                     .putLong(AppKeys.KEY_LAST_SYNC_MS, System.currentTimeMillis())
-                    .apply()
+
+                if (activeSyncMode == ArchiveSyncMode.FULL_EXPORT) {
+                    editor.putBoolean(
+                        AppKeys.KEY_FULL_EXPORT_COMPLETE,
+                        true
+                    )
+                }
+                editor.apply()
                 refreshHomeStats()
                 WorkScheduler.apply(
                     this,
@@ -428,7 +460,22 @@ class MainActivity : AppCompatActivity() {
         binding.statNew.text = newCount.toString()
         binding.statLastSync.text =
             if (last <= 0L) "Never"
-            else SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(last))
+            else SimpleDateFormat(
+                "MMM d, h:mm a",
+                Locale.getDefault()
+            ).format(Date(last))
+
+        val fullExportComplete =
+            prefs.getBoolean(
+                AppKeys.KEY_FULL_EXPORT_COMPLETE,
+                false
+            )
+        binding.syncButton.text =
+            if (fullExportComplete) {
+                "↻  Sync New Yahoo Mail to GitHub"
+            } else {
+                "↻  Full Yahoo Archive to GitHub"
+            }
     }
 
     private fun runSearch() {
