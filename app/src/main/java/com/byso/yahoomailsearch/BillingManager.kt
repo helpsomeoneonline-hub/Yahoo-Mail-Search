@@ -66,7 +66,7 @@ class BillingManager(
                     onMessage("Google Play billing is unavailable right now.")
                     return@queryProductDetailsAsync
                 }
-                val detail = details.firstOrNull()
+                val detail = details.productDetailsList.firstOrNull()
                 val offer = detail?.subscriptionOfferDetails?.firstOrNull()
                 if (detail == null || offer == null) {
                     onMessage(
