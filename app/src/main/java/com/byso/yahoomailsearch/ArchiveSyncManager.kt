@@ -3,6 +3,8 @@ package com.byso.yahoomailsearch
 import java.io.EOFException
 import java.net.SocketException
 import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.io.IOException
 import javax.mail.AuthenticationFailedException
 import javax.mail.FolderClosedException
 import javax.mail.MessagingException
@@ -59,7 +61,7 @@ class ArchiveSyncManager(
                 onProgress(
                     latest.copy(
                         stage =
-                            "Yahoo closed the connection. Reconnecting automatically " +
+                            "Connection interrupted. Reconnecting and resuming automatically " +
                                 "($attempt/$MAX_RECONNECTS) in $waitSeconds seconds...",
                         complete = false
                     )
@@ -140,9 +142,11 @@ class ArchiveSyncManager(
                 is AuthenticationFailedException -> return false
                 is FolderClosedException,
                 is StoreClosedException,
+                is UnknownHostException,
                 is SocketTimeoutException,
                 is SocketException,
-                is EOFException -> return true
+                is EOFException,
+                is IOException -> return true
                 is MessagingException -> {
                     val message = current.message.orEmpty().lowercase()
                     if (
