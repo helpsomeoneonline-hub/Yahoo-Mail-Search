@@ -22,6 +22,8 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.byso.yahoomailsearch.databinding.ActivityMainBinding
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -43,6 +45,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        applySafeAreaInsets()
 
         securePrefs = SecurePrefs(this)
         cache = CacheDb(this)
@@ -77,6 +80,29 @@ class MainActivity : AppCompatActivity() {
 
         maybeRequestNotificationPermission()
         maybePromptBiometric()
+    }
+
+    private fun applySafeAreaInsets() {
+        val root = binding.rootLayout
+        val baseLeft = root.paddingLeft
+        val baseTop = root.paddingTop
+        val baseRight = root.paddingRight
+        val baseBottom = root.paddingBottom
+
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or
+                    WindowInsetsCompat.Type.displayCutout()
+            )
+            view.setPadding(
+                baseLeft + bars.left,
+                baseTop + bars.top,
+                baseRight + bars.right,
+                baseBottom + bars.bottom
+            )
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
     }
 
     private fun applySavedTheme() {
@@ -777,13 +803,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updatePremiumStatus() {
-        binding.premiumStatusText.text =
-            if (billingManager.isPro()) {
-                if (BuildConfig.DEBUG) "✓ Pro unlocked for this test build"
-                else "✓ Mail Search Pro"
-            } else {
-                "Free plan — 1 alert rule"
-            }
+        if (BuildConfig.DEBUG) {
+            binding.premiumStatusText.text = "✓ Test Build — All Features Unlocked"
+            binding.upgradeButton.visibility = View.GONE
+            binding.restorePurchasesButton.visibility = View.GONE
+        } else {
+            binding.upgradeButton.visibility = View.VISIBLE
+            binding.restorePurchasesButton.visibility = View.VISIBLE
+            binding.premiumStatusText.text =
+                if (billingManager.isPro()) {
+                    "✓ Mail Search Pro"
+                } else {
+                    "Free plan — 1 alert rule"
+                }
+        }
     }
 
     private fun showFirstRunWelcome() {
