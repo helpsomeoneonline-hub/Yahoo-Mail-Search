@@ -425,9 +425,19 @@ class MainActivity : AppCompatActivity() {
 
             if (progress.complete) {
                 val prefs = getSharedPreferences(AppKeys.PREFS_APP, Context.MODE_PRIVATE)
+                val totalForDashboard =
+                    if (activeSyncMode == ArchiveSyncMode.FULL_EXPORT) {
+                        progress.totalMessages
+                    } else {
+                        maxOf(
+                            prefs.getInt(AppKeys.KEY_LAST_TOTAL, 0),
+                            cache.size()
+                        )
+                    }
+
                 val editor = prefs.edit()
                     .putBoolean(AppKeys.KEY_INITIAL_SYNC_COMPLETE, true)
-                    .putInt(AppKeys.KEY_LAST_TOTAL, progress.totalMessages)
+                    .putInt(AppKeys.KEY_LAST_TOTAL, totalForDashboard)
                     .putInt(AppKeys.KEY_LAST_ARCHIVED, cache.size())
                     .putInt(AppKeys.KEY_LAST_NEW, progress.newArchived)
                     .putLong(AppKeys.KEY_LAST_SYNC_MS, System.currentTimeMillis())
