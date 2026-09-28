@@ -129,3 +129,9 @@ data class SyncProgress(
                 .coerceIn(0, 100)
         }
 }
+
+
+enum class ArchiveSyncMode {
+    FULL_EXPORT,
+    LIVE_INCREMENTAL
+}
