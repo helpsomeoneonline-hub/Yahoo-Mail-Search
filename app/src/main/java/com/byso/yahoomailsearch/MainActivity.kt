@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.text.InputType
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
@@ -351,8 +352,17 @@ class MainActivity : AppCompatActivity() {
                 "Starting live incremental Yahoo sync..."
             }
 
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         runTask(startMessage) {
-            manager(creds).sync(activeSyncMode, ::postSyncProgress)
+            try {
+                manager(creds).sync(activeSyncMode, ::postSyncProgress)
+            } finally {
+                runOnUiThread {
+                    window.clearFlags(
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                    )
+                }
+            }
         }
     }
 
