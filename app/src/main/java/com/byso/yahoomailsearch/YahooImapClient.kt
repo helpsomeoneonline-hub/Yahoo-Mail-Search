@@ -166,8 +166,8 @@ class YahooImapClient(
                             }
                             folder.fetch(newMessages.toTypedArray(), fetchProfile)
 
-                            val records = newMessages.mapNotNull { message ->
-                                runCatching { toRecord(folder, message) }.getOrNull()
+                            val records = newMessages.map { message ->
+                                toRecord(folder, message)
                             }.sortedBy { it.uid }
 
                             records.chunked(ARCHIVE_BATCH).forEach { batch ->
