@@ -11,6 +11,7 @@ object AppKeys {
     const val KEY_HIDE_NOTIFICATION_CONTENT = "hide_notification_content"
     const val KEY_BACKGROUND_SYNC = "background_sync"
     const val KEY_INITIAL_SYNC_COMPLETE = "initial_sync_complete"
+    const val KEY_FULL_EXPORT_COMPLETE = "full_export_complete"
     const val KEY_LAST_TOTAL = "last_total"
     const val KEY_LAST_ARCHIVED = "last_archived"
     const val KEY_LAST_NEW = "last_new"
