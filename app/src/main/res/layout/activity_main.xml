@@ -472,7 +472,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="10dp"
-                        android:text="Test & Save Connection"
+                        android:text="Test &amp; Save Connection"
                         android:textAllCaps="false" />
                 </LinearLayout>
 
