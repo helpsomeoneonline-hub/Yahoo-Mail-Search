@@ -588,7 +588,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Pro is designed for unlimited alert rules and future premium automation. Debug builds are unlocked for testing."
+                        android:text="All current features are unlocked in this test build. Google Play purchase controls are hidden until the release build."
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
 
