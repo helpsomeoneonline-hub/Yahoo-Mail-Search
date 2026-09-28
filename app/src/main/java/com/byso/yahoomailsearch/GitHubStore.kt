@@ -5,7 +5,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.net.URLEncoder
 import java.net.URL
 
@@ -95,30 +99,99 @@ class GitHubStore(
         URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
     private fun request(method: String, url: String, body: String?): Pair<Int, String> {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 30_000
-            readTimeout = 90_000
-            setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("Authorization", "Bearer $token")
-            setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-            setRequestProperty("User-Agent", "Yahoo-Mail-Search-Android")
-            if (body != null) {
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        var attempt = 0
+        var lastError: Throwable? = null
+
+        while (attempt < MAX_NETWORK_ATTEMPTS) {
+            var connection: HttpURLConnection? = null
+            try {
+                connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                    requestMethod = method
+                    connectTimeout = 30_000
+                    readTimeout = 90_000
+                    setRequestProperty("Accept", "application/vnd.github+json")
+                    setRequestProperty("Authorization", "Bearer $token")
+                    setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+                    setRequestProperty("User-Agent", "Yahoo-Mail-Search-Android")
+                    if (body != null) {
+                        doOutput = true
+                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    }
+                }
+
+                if (body != null) {
+                    connection.outputStream.use {
+                        it.write(body.toByteArray(Charsets.UTF_8))
+                    }
+                }
+
+                val code = connection.responseCode
+                val stream =
+                    if (code in 200..299) connection.inputStream
+                    else connection.errorStream
+                val text = stream?.let {
+                    BufferedReader(InputStreamReader(it)).use { reader ->
+                        reader.readText()
+                    }
+                }.orEmpty()
+
+                if (code !in RETRYABLE_HTTP_CODES) {
+                    return code to text
+                }
+
+                lastError = IOException(
+                    "Temporary GitHub HTTP error $code"
+                )
+            } catch (error: Throwable) {
+                if (!isRetryableNetworkError(error)) {
+                    throw error
+                }
+                lastError = error
+            } finally {
+                connection?.disconnect()
+            }
+
+            attempt++
+            if (attempt < MAX_NETWORK_ATTEMPTS) {
+                val delaySeconds = minOf(2 * attempt, 12)
+                try {
+                    Thread.sleep(delaySeconds * 1_000L)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw lastError ?: IOException(
+                        "GitHub request interrupted"
+                    )
+                }
             }
         }
-        if (body != null) {
-            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-        }
 
-        val code = connection.responseCode
-        val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-        val text = stream?.let {
-            BufferedReader(InputStreamReader(it)).use { reader -> reader.readText() }
-        }.orEmpty()
-        connection.disconnect()
-        return code to text
+        throw IOException(
+            "GitHub is temporarily unreachable after $MAX_NETWORK_ATTEMPTS attempts. " +
+                "Your saved archive is unchanged; retry when the connection returns.",
+            lastError
+        )
+    }
+
+    private fun isRetryableNetworkError(error: Throwable): Boolean {
+        var current: Throwable? = error
+        while (current != null) {
+            if (
+                current is UnknownHostException ||
+                current is SocketTimeoutException ||
+                current is SocketException ||
+                current is IOException
+            ) {
+                return true
+            }
+            current = current.cause
+        }
+        return false
+    }
+
+    companion object {
+        private const val MAX_NETWORK_ATTEMPTS = 8
+        private val RETRYABLE_HTTP_CODES =
+            setOf(429, 500, 502, 503, 504)
     }
 
     private fun checkSuccess(code: Int, body: String) {
