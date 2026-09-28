@@ -635,7 +635,8 @@ class YahooImapClient(
         const val NORMAL_IMAP_HOST = "imap.mail.yahoo.com"
         const val EXPORT_IMAP_HOST = "export.imap.mail.yahoo.com"
         private const val MESSAGE_WINDOW = 500
-        private const val ARCHIVE_BATCH = 100
+        private const val DOWNLOAD_GROUP = 50
+        private const val ARCHIVE_BATCH = 50
         private const val MAX_BODY_CHARS = 500_000
     }
 }
