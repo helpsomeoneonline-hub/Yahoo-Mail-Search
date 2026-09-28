@@ -55,8 +55,13 @@ class CacheDb(context: Context) {
         }
     }
 
-    fun search(query: String, previewLimit: Int = 60): SearchSummary {
-        val where = whereClause(query)
+    fun search(
+        query: String,
+        target: String = AlertRule.TARGET_ANY,
+        attachmentOnly: Boolean = false,
+        previewLimit: Int = 60
+    ): SearchSummary {
+        val where = whereClause(query, target, attachmentOnly)
         val total = db.rawQuery(
             "SELECT COUNT(*) FROM mail ${where.first}",
             where.second
@@ -93,8 +98,27 @@ class CacheDb(context: Context) {
         return SearchSummary(total, preview)
     }
 
-    fun matchingKeys(query: String): List<MailKey> {
-        val where = whereClause(query)
+    fun countMatches(
+        query: String,
+        target: String = AlertRule.TARGET_ANY,
+        attachmentOnly: Boolean = false
+    ): Int {
+        val where = whereClause(query, target, attachmentOnly)
+        return db.rawQuery(
+            "SELECT COUNT(*) FROM mail ${where.first}",
+            where.second
+        ).use { cursor ->
+            cursor.moveToFirst()
+            cursor.getInt(0)
+        }
+    }
+
+    fun matchingKeys(
+        query: String,
+        target: String = AlertRule.TARGET_ANY,
+        attachmentOnly: Boolean = false
+    ): List<MailKey> {
+        val where = whereClause(query, target, attachmentOnly)
         return db.rawQuery(
             "SELECT folder, uid FROM mail ${where.first} ORDER BY date_ms DESC",
             where.second
@@ -130,16 +154,52 @@ class CacheDb(context: Context) {
         runCatching { db.execSQL("VACUUM") }
     }
 
-    private fun whereClause(query: String): Pair<String, Array<String>?> {
+    private fun whereClause(
+        query: String,
+        target: String,
+        attachmentOnly: Boolean
+    ): Pair<String, Array<String>?> {
         val q = query.trim()
-        if (q.isBlank()) return "" to null
-        val like = "%${q.replace("%", "\\%").replace("_", "\\_")}%"
-        return """
-            WHERE subject LIKE ? ESCAPE '\'
-               OR sender LIKE ? ESCAPE '\'
-               OR recipients LIKE ? ESCAPE '\'
-               OR body LIKE ? ESCAPE '\'
-               OR attachment_names LIKE ? ESCAPE '\'
-        """.trimIndent() to arrayOf(like, like, like, like, like)
+        val clauses = mutableListOf<String>()
+        val args = mutableListOf<String>()
+
+        if (q.isNotBlank()) {
+            val like = "%${q.replace("%", "\\%").replace("_", "\\_")}%"
+            when (target) {
+                AlertRule.TARGET_SENDER -> {
+                    clauses += "sender LIKE ? ESCAPE '\\'"
+                    args += like
+                }
+                AlertRule.TARGET_SUBJECT -> {
+                    clauses += "subject LIKE ? ESCAPE '\\'"
+                    args += like
+                }
+                AlertRule.TARGET_BODY -> {
+                    clauses += "body LIKE ? ESCAPE '\\'"
+                    args += like
+                }
+                AlertRule.TARGET_ATTACHMENT -> {
+                    clauses += "attachment_names LIKE ? ESCAPE '\\'"
+                    args += like
+                }
+                else -> {
+                    clauses += """
+                        (
+                            subject LIKE ? ESCAPE '\\'
+                            OR sender LIKE ? ESCAPE '\\'
+                            OR recipients LIKE ? ESCAPE '\\'
+                            OR body LIKE ? ESCAPE '\\'
+                            OR attachment_names LIKE ? ESCAPE '\\'
+                        )
+                    """.trimIndent()
+                    repeat(5) { args += like }
+                }
+            }
+        }
+
+        if (attachmentOnly) clauses += "has_attachments = 1"
+
+        if (clauses.isEmpty()) return "" to null
+        return "WHERE ${clauses.joinToString(" AND ")}" to args.toTypedArray()
     }
 }
