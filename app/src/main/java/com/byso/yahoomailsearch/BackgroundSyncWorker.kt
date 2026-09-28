@@ -44,7 +44,13 @@ class BackgroundSyncWorker(
             ).sync(ArchiveSyncMode.LIVE_INCREMENTAL) { progress ->
                 if (progress.complete) {
                     prefs.edit()
-                        .putInt(AppKeys.KEY_LAST_TOTAL, progress.totalMessages)
+                        .putInt(
+                            AppKeys.KEY_LAST_TOTAL,
+                            maxOf(
+                                prefs.getInt(AppKeys.KEY_LAST_TOTAL, 0),
+                                cache.size()
+                            )
+                        )
                         .putInt(AppKeys.KEY_LAST_ARCHIVED, cache.size())
                         .putInt(AppKeys.KEY_LAST_NEW, progress.newArchived)
                         .putLong(AppKeys.KEY_LAST_SYNC_MS, System.currentTimeMillis())
