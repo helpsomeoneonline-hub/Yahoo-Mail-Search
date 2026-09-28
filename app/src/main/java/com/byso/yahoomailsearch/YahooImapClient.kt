@@ -242,6 +242,47 @@ class YahooImapClient(
         }
     }
 
+    fun fetchRecentSince(
+        afterMs: Long,
+        maxPerFolder: Int = 100
+    ): List<MailRecord> {
+        val store = connect()
+        val results = mutableListOf<MailRecord>()
+        try {
+            val folders = store.defaultFolder.list("*")
+                .filter { (it.type and Folder.HOLDS_MESSAGES) != 0 }
+                .filterNot { isExcludedFolder(it.fullName) }
+                .mapNotNull { it as? IMAPFolder }
+
+            folders.forEach { folder ->
+                folder.open(Folder.READ_ONLY)
+                try {
+                    val count = folder.messageCount
+                    if (count <= 0) return@forEach
+                    val start = maxOf(1, count - maxPerFolder + 1)
+                    val messages = folder.getMessages(start, count)
+                    val fetchProfile = FetchProfile().apply {
+                        add(FetchProfile.Item.ENVELOPE)
+                        add(FetchProfile.Item.CONTENT_INFO)
+                        add(UIDFolder.FetchProfileItem.UID)
+                    }
+                    folder.fetch(messages, fetchProfile)
+                    messages.forEach { message ->
+                        val dateMs = (message.receivedDate ?: message.sentDate)?.time ?: 0L
+                        if (dateMs > afterMs) {
+                            results += toRecord(folder, message)
+                        }
+                    }
+                } finally {
+                    if (folder.isOpen) folder.close(false)
+                }
+            }
+        } finally {
+            runCatching { store.close() }
+        }
+        return results.sortedByDescending { it.dateMs }
+    }
+
     fun moveToTrash(
         keys: List<MailKey>,
         onProgress: (String) -> Unit
