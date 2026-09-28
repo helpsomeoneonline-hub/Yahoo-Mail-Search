@@ -118,9 +118,55 @@ class YahooImapClient(
                         archivedRangesByFolderId[folderId].orEmpty()
 
                     var startSequence = 1
+
+                    val saved = state.folders[folder.fullName]
+                    if (
+                        saved != null &&
+                        saved.uidValidity == validity &&
+                        saved.lastUid > 0
+                    ) {
+                        val checkpointMessage =
+                            runCatching {
+                                folder.getMessageByUID(saved.lastUid)
+                            }.getOrNull()
+
+                        if (checkpointMessage != null) {
+                            startSequence =
+                                (checkpointMessage.messageNumber + 1)
+                                    .coerceAtMost(folderTotal + 1)
+
+                            val skipped = startSequence - 1
+                            processedMessages += skipped
+                            folderProcessed = skipped
+                            alreadyArchived += skipped
+
+                            onProgress(
+                                SyncProgress(
+                                    stage =
+                                        "Resuming after $skipped already-saved emails...",
+                                    folderName = folder.fullName,
+                                    folderIndex = folderIndex + 1,
+                                    folderCount = folders.size,
+                                    totalMessages = totalMessages,
+                                    processedMessages = processedMessages,
+                                    alreadyArchived = alreadyArchived,
+                                    newArchived = newArchived,
+                                    uploadedBatches = uploadedBatches,
+                                    folderProcessed = folderProcessed,
+                                    folderTotal = folderTotal
+                                )
+                            )
+                        }
+                    }
+
                     while (startSequence <= folderTotal) {
-                        val endSequence = minOf(startSequence + MESSAGE_WINDOW - 1, folderTotal)
-                        val messages = folder.getMessages(startSequence, endSequence)
+                        val endSequence =
+                            minOf(
+                                startSequence + MESSAGE_WINDOW - 1,
+                                folderTotal
+                            )
+                        val messages =
+                            folder.getMessages(startSequence, endSequence)
 
                         val uidFetch = FetchProfile().apply {
                             add(UIDFolder.FetchProfileItem.UID)
@@ -134,8 +180,9 @@ class YahooImapClient(
                         messages.forEach { message ->
                             val uid = folder.getUID(message)
                             if (uid > highestUid) highestUid = uid
-                            val alreadyArchived = archivedRanges.any { uid in it }
-                            if (alreadyArchived) {
+                            val alreadySaved =
+                                archivedRanges.any { uid in it }
+                            if (alreadySaved) {
                                 oldInWindow++
                             } else {
                                 newMessages += message
@@ -147,16 +194,19 @@ class YahooImapClient(
                         if (newMessages.isNotEmpty()) {
                             onProgress(
                                 SyncProgress(
-                                    stage = "Downloading ${newMessages.size} new emails...",
+                                    stage =
+                                        "Preparing ${newMessages.size} emails...",
                                     folderName = folder.fullName,
                                     folderIndex = folderIndex + 1,
                                     folderCount = folders.size,
                                     totalMessages = totalMessages,
-                                    processedMessages = processedMessages,
+                                    processedMessages =
+                                        processedMessages + oldInWindow,
                                     alreadyArchived = alreadyArchived,
                                     newArchived = newArchived,
                                     uploadedBatches = uploadedBatches,
-                                    folderProcessed = folderProcessed,
+                                    folderProcessed =
+                                        folderProcessed + oldInWindow,
                                     folderTotal = folderTotal
                                 )
                             )
@@ -167,88 +217,181 @@ class YahooImapClient(
                                 add(FetchProfile.Item.CONTENT_INFO)
                                 add(UIDFolder.FetchProfileItem.UID)
                             }
-                            folder.fetch(newMessages.toTypedArray(), fetchProfile)
 
-                            val records = mutableListOf<MailRecord>()
-                            newMessages.forEachIndexed { index, message ->
-                                val virtualProcessed =
-                                    processedMessages + oldInWindow + index
-                                val virtualFolderProcessed =
-                                    folderProcessed + oldInWindow + index
+                            val pending = mutableListOf<MailRecord>()
+                            var downloadedInWindow = 0
 
-                                onProgress(
-                                    SyncProgress(
-                                        stage =
-                                            "Downloading email ${index + 1} of ${newMessages.size}...",
-                                        folderName = folder.fullName,
-                                        folderIndex = folderIndex + 1,
-                                        folderCount = folders.size,
-                                        totalMessages = totalMessages,
-                                        processedMessages = virtualProcessed,
-                                        alreadyArchived = alreadyArchived,
-                                        newArchived = newArchived,
-                                        uploadedBatches = uploadedBatches,
-                                        folderProcessed = virtualFolderProcessed,
-                                        folderTotal = folderTotal
+                            newMessages
+                                .chunked(DOWNLOAD_GROUP)
+                                .forEach { group ->
+                                    folder.fetch(
+                                        group.toTypedArray(),
+                                        fetchProfile
                                     )
-                                )
 
-                                records += toRecord(folder, message)
+                                    group.forEach { message ->
+                                        val displayIndex =
+                                            downloadedInWindow + 1
 
-                                onProgress(
-                                    SyncProgress(
-                                        stage =
-                                            "Downloaded ${index + 1} of ${newMessages.size} emails",
-                                        folderName = folder.fullName,
-                                        folderIndex = folderIndex + 1,
-                                        folderCount = folders.size,
-                                        totalMessages = totalMessages,
-                                        processedMessages = virtualProcessed + 1,
-                                        alreadyArchived = alreadyArchived,
-                                        newArchived = newArchived,
-                                        uploadedBatches = uploadedBatches,
-                                        folderProcessed = virtualFolderProcessed + 1,
-                                        folderTotal = folderTotal
-                                    )
-                                )
-                            }
-
-                            records.sortedBy { it.uid }
-                                .chunked(ARCHIVE_BATCH)
-                                .forEach { batch ->
-                                    if (batch.isNotEmpty()) {
                                         onProgress(
                                             SyncProgress(
-                                                stage = "Uploading ${batch.size} emails to GitHub...",
+                                                stage =
+                                                    "Downloading email $displayIndex of ${newMessages.size}...",
                                                 folderName = folder.fullName,
                                                 folderIndex = folderIndex + 1,
                                                 folderCount = folders.size,
                                                 totalMessages = totalMessages,
                                                 processedMessages =
-                                                    processedMessages + windowSizePreview(
-                                                        oldInWindow,
-                                                        records.size
-                                                    ),
-                                                alreadyArchived = alreadyArchived,
+                                                    processedMessages +
+                                                        oldInWindow +
+                                                        downloadedInWindow,
+                                                alreadyArchived =
+                                                    alreadyArchived,
                                                 newArchived = newArchived,
-                                                uploadedBatches = uploadedBatches,
+                                                uploadedBatches =
+                                                    uploadedBatches,
                                                 folderProcessed =
-                                                    folderProcessed + windowSizePreview(
-                                                        oldInWindow,
-                                                        records.size
-                                                    ),
+                                                    folderProcessed +
+                                                        oldInWindow +
+                                                        downloadedInWindow,
                                                 folderTotal = folderTotal
                                             )
                                         )
-                                        onBatch(folder.fullName, validity, batch)
-                                        newArchived += batch.size
-                                        uploadedBatches++
+
+                                        pending +=
+                                            toRecord(folder, message)
+                                        downloadedInWindow++
+
+                                        onProgress(
+                                            SyncProgress(
+                                                stage =
+                                                    "Downloaded $downloadedInWindow of ${newMessages.size} emails",
+                                                folderName = folder.fullName,
+                                                folderIndex = folderIndex + 1,
+                                                folderCount = folders.size,
+                                                totalMessages = totalMessages,
+                                                processedMessages =
+                                                    processedMessages +
+                                                        oldInWindow +
+                                                        downloadedInWindow,
+                                                alreadyArchived =
+                                                    alreadyArchived,
+                                                newArchived = newArchived,
+                                                uploadedBatches =
+                                                    uploadedBatches,
+                                                folderProcessed =
+                                                    folderProcessed +
+                                                        oldInWindow +
+                                                        downloadedInWindow,
+                                                folderTotal = folderTotal
+                                            )
+                                        )
+
+                                        if (pending.size >= ARCHIVE_BATCH) {
+                                            val batch =
+                                                pending.sortedBy { it.uid }
+                                                    .toList()
+
+                                            onProgress(
+                                                SyncProgress(
+                                                    stage =
+                                                        "Saving ${batch.size} emails to GitHub...",
+                                                    folderName =
+                                                        folder.fullName,
+                                                    folderIndex =
+                                                        folderIndex + 1,
+                                                    folderCount =
+                                                        folders.size,
+                                                    totalMessages =
+                                                        totalMessages,
+                                                    processedMessages =
+                                                        processedMessages +
+                                                            oldInWindow +
+                                                            downloadedInWindow,
+                                                    alreadyArchived =
+                                                        alreadyArchived,
+                                                    newArchived =
+                                                        newArchived,
+                                                    uploadedBatches =
+                                                        uploadedBatches,
+                                                    folderProcessed =
+                                                        folderProcessed +
+                                                            oldInWindow +
+                                                            downloadedInWindow,
+                                                    folderTotal =
+                                                        folderTotal
+                                                )
+                                            )
+
+                                            onBatch(
+                                                folder.fullName,
+                                                validity,
+                                                batch
+                                            )
+                                            newArchived += batch.size
+                                            uploadedBatches++
+
+                                            onCheckpoint(
+                                                folder.fullName,
+                                                validity,
+                                                batch.last().uid
+                                            )
+                                            pending.clear()
+                                        }
                                     }
                                 }
+
+                            if (pending.isNotEmpty()) {
+                                val batch =
+                                    pending.sortedBy { it.uid }.toList()
+
+                                onProgress(
+                                    SyncProgress(
+                                        stage =
+                                            "Saving ${batch.size} emails to GitHub...",
+                                        folderName = folder.fullName,
+                                        folderIndex = folderIndex + 1,
+                                        folderCount = folders.size,
+                                        totalMessages = totalMessages,
+                                        processedMessages =
+                                            processedMessages +
+                                                oldInWindow +
+                                                downloadedInWindow,
+                                        alreadyArchived = alreadyArchived,
+                                        newArchived = newArchived,
+                                        uploadedBatches =
+                                            uploadedBatches,
+                                        folderProcessed =
+                                            folderProcessed +
+                                                oldInWindow +
+                                                downloadedInWindow,
+                                        folderTotal = folderTotal
+                                    )
+                                )
+
+                                onBatch(
+                                    folder.fullName,
+                                    validity,
+                                    batch
+                                )
+                                newArchived += batch.size
+                                uploadedBatches++
+
+                                onCheckpoint(
+                                    folder.fullName,
+                                    validity,
+                                    batch.last().uid
+                                )
+                                pending.clear()
+                            }
                         }
 
                         if (highestUid > 0) {
-                            onCheckpoint(folder.fullName, validity, highestUid)
+                            onCheckpoint(
+                                folder.fullName,
+                                validity,
+                                highestUid
+                            )
                         }
 
                         val windowSize = messages.size
