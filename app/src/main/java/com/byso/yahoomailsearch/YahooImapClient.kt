@@ -28,6 +28,7 @@ class YahooImapClient(
 
     fun sync(
         state: SyncState,
+        archivedRangesByFolderId: Map<String, List<LongRange>> = emptyMap(),
         onBatch: (folderName: String, uidValidity: Long, records: List<MailRecord>) -> Unit,
         onCheckpoint: (folderName: String, uidValidity: Long, lastUid: Long) -> Unit,
         onProgress: (SyncProgress) -> Unit
@@ -111,9 +112,9 @@ class YahooImapClient(
                 folder.open(Folder.READ_ONLY)
                 try {
                     val validity = folder.uidValidity
-                    val saved = state.folders[folder.fullName]
-                    val savedUid =
-                        if (saved != null && saved.uidValidity == validity) saved.lastUid else 0L
+                    val folderId = CryptoVault.stableId(folder.fullName)
+                    val archivedRanges =
+                        archivedRangesByFolderId[folderId].orEmpty()
 
                     var startSequence = 1
                     while (startSequence <= folderTotal) {
@@ -126,16 +127,17 @@ class YahooImapClient(
                         folder.fetch(messages, uidFetch)
 
                         val newMessages = mutableListOf<Message>()
-                        var highestUid = savedUid
+                        var highestUid = 0L
                         var oldInWindow = 0
 
                         messages.forEach { message ->
                             val uid = folder.getUID(message)
                             if (uid > highestUid) highestUid = uid
-                            if (uid > savedUid) {
-                                newMessages += message
-                            } else {
+                            val alreadyArchived = archivedRanges.any { uid in it }
+                            if (alreadyArchived) {
                                 oldInWindow++
+                            } else {
+                                newMessages += message
                             }
                         }
 
