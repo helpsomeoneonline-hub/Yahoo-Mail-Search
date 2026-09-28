@@ -18,7 +18,7 @@ class ArchiveSyncManager(
         github.ensureConfig()
     }
 
-    fun sync(onProgress: (String) -> Unit) {
+    fun sync(onProgress: (SyncProgress) -> Unit) {
         val key = archiveKey()
         val state = loadState(key)
         val yahoo = YahooImapClient(email, yahooAppPassword)
@@ -30,8 +30,7 @@ class ArchiveSyncManager(
                 val firstUid = records.first().uid
                 val lastUid = records.last().uid
                 val path = "archive/$folderId/$firstUid-$lastUid.enc"
-                onProgress("Encrypting ${records.size} messages from $folderName")
-                val compressed = CryptoVault.gzip(MailRecord.listToJson(records))
+                                val compressed = CryptoVault.gzip(MailRecord.listToJson(records))
                 val encrypted = CryptoVault.encrypt(key, compressed)
                 github.putFile(
                     path,
@@ -46,7 +45,6 @@ class ArchiveSyncManager(
             },
             onProgress = onProgress
         )
-        onProgress("Sync complete. Temporary search cache contains ${cache.size()} messages.")
     }
 
     fun rebuildCache(onProgress: (String) -> Unit) {
