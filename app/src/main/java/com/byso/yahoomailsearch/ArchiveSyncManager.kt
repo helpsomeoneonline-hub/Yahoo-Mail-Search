@@ -13,21 +13,43 @@ class ArchiveSyncManager(
     private val github = GitHubStore(githubToken)
 
     fun testConnections() {
-        YahooImapClient(email, yahooAppPassword).testConnection()
+        YahooImapClient(
+            email,
+            yahooAppPassword,
+            YahooImapClient.NORMAL_IMAP_HOST
+        ).testConnection()
         github.testAccess()
         github.ensureConfig()
     }
 
-    fun sync(onProgress: (SyncProgress) -> Unit) {
+    fun sync(
+        mode: ArchiveSyncMode = ArchiveSyncMode.LIVE_INCREMENTAL,
+        onProgress: (SyncProgress) -> Unit
+    ) {
+        val source = sourceFor(mode)
         val key = archiveKey()
-        val archiveRanges = loadArchiveRanges()
+        val archiveRanges = loadArchiveRanges(source.archiveRoot)
 
         if (archiveRanges.isNotEmpty()) {
-            verifyArchiveKey(key)
+            verifyArchiveKey(key, source.archiveRoot)
         }
 
-        val state = loadStateLenient(key, onProgress)
-        val yahoo = YahooImapClient(email, yahooAppPassword)
+        val state = loadStateLenient(key, source.statePath, onProgress)
+        val yahoo = YahooImapClient(
+            email,
+            yahooAppPassword,
+            source.imapHost
+        )
+
+        onProgress(
+            SyncProgress(
+                stage = if (mode == ArchiveSyncMode.FULL_EXPORT) {
+                    "Connecting to Yahoo full-history export server..."
+                } else {
+                    "Connecting to Yahoo live mail server..."
+                }
+            )
+        )
 
         yahoo.sync(
             state = state,
@@ -36,20 +58,23 @@ class ArchiveSyncManager(
                 val folderId = CryptoVault.stableId(folderName)
                 val firstUid = records.first().uid
                 val lastUid = records.last().uid
-                val path = "archive/$folderId/$firstUid-$lastUid.enc"
+                val path =
+                    "${source.archiveRoot}/$folderId/$firstUid-$lastUid.enc"
 
-                val compressed = CryptoVault.gzip(MailRecord.listToJson(records))
+                val compressed =
+                    CryptoVault.gzip(MailRecord.listToJson(records))
                 val encrypted = CryptoVault.encrypt(key, compressed)
                 github.putFile(
                     path,
                     encrypted,
-                    "Archive $folderName UIDs $firstUid-$lastUid"
+                    "Archive ${source.label} $folderName UIDs $firstUid-$lastUid"
                 )
                 cache.upsert(records)
             },
             onCheckpoint = { folderName, uidValidity, lastUid ->
-                state.folders[folderName] = FolderState(uidValidity, lastUid)
-                saveState(key, state)
+                state.folders[folderName] =
+                    FolderState(uidValidity, lastUid)
+                saveState(key, source.statePath, state)
             },
             onProgress = onProgress
         )
@@ -57,29 +82,70 @@ class ArchiveSyncManager(
 
     fun rebuildCache(onProgress: (String) -> Unit) {
         val key = archiveKey()
-        verifyArchiveKey(key)
         cache.clear()
 
-        val folders = github.listDirectory("archive").filter { it.type == "dir" }
+        val roots = listOf(
+            "archive",
+            "archive_export",
+            "archive_live"
+        )
+
         var fileNumber = 0
+        roots.forEach { root ->
+            val folders = github.listDirectory(root)
+                .filter { it.type == "dir" }
 
-        folders.forEach { folder ->
-            val files = github.listDirectory(folder.path)
-                .filter { it.type == "file" && it.name.endsWith(".enc") }
+            if (folders.isNotEmpty()) {
+                verifyArchiveKey(key, root)
+            }
 
-            files.forEach { entry ->
-                fileNumber++
-                onProgress("Restoring search cache: file $fileNumber")
-                val remote = github.getFile(entry.path) ?: return@forEach
-                val plain = CryptoVault.gunzip(
-                    CryptoVault.decrypt(key, remote.bytes)
-                )
-                cache.upsert(MailRecord.listFromJson(plain))
+            folders.forEach { folder ->
+                val files = github.listDirectory(folder.path)
+                    .filter {
+                        it.type == "file" &&
+                            it.name.endsWith(".enc")
+                    }
+
+                files.forEach { entry ->
+                    fileNumber++
+                    onProgress(
+                        "Restoring search cache: file $fileNumber"
+                    )
+                    val remote =
+                        github.getFile(entry.path) ?: return@forEach
+                    val plain = CryptoVault.gunzip(
+                        CryptoVault.decrypt(key, remote.bytes)
+                    )
+                    cache.upsert(
+                        MailRecord.listFromJson(plain)
+                    )
+                }
             }
         }
 
-        onProgress("Search cache rebuilt: ${cache.size()} messages.")
+        onProgress(
+            "Search cache rebuilt: ${cache.size()} messages."
+        )
     }
+
+    private fun sourceFor(mode: ArchiveSyncMode): SyncSource =
+        when (mode) {
+            ArchiveSyncMode.FULL_EXPORT ->
+                SyncSource(
+                    imapHost = YahooImapClient.EXPORT_IMAP_HOST,
+                    archiveRoot = "archive_export",
+                    statePath = "state_export.enc",
+                    label = "FullExport"
+                )
+
+            ArchiveSyncMode.LIVE_INCREMENTAL ->
+                SyncSource(
+                    imapHost = YahooImapClient.NORMAL_IMAP_HOST,
+                    archiveRoot = "archive_live",
+                    statePath = "state_live.enc",
+                    label = "Live"
+                )
+        }
 
     private fun archiveKey(): SecretKey {
         require(archivePassphrase.length >= 8) {
@@ -93,46 +159,67 @@ class ArchiveSyncManager(
         )
     }
 
-    private fun loadArchiveRanges(): Map<String, List<LongRange>> {
-        val result = linkedMapOf<String, MutableList<LongRange>>()
-        val folders = github.listDirectory("archive")
-            .filter { it.type == "dir" }
+    private fun loadArchiveRanges(
+        archiveRoot: String
+    ): Map<String, List<LongRange>> {
+        val result =
+            linkedMapOf<String, MutableList<LongRange>>()
 
-        folders.forEach { folder ->
-            val ranges = result.getOrPut(folder.name) { mutableListOf() }
-            github.listDirectory(folder.path)
-                .filter { it.type == "file" && it.name.endsWith(".enc") }
-                .forEach { entry ->
-                    val match = RANGE_REGEX.matchEntire(entry.name)
-                        ?: return@forEach
-                    val first = match.groupValues[1].toLongOrNull()
-                        ?: return@forEach
-                    val last = match.groupValues[2].toLongOrNull()
-                        ?: return@forEach
-                    if (last >= first) {
-                        ranges += first..last
+        github.listDirectory(archiveRoot)
+            .filter { it.type == "dir" }
+            .forEach { folder ->
+                val ranges =
+                    result.getOrPut(folder.name) {
+                        mutableListOf()
                     }
-                }
-        }
+
+                github.listDirectory(folder.path)
+                    .filter {
+                        it.type == "file" &&
+                            it.name.endsWith(".enc")
+                    }
+                    .forEach { entry ->
+                        val match =
+                            RANGE_REGEX.matchEntire(entry.name)
+                                ?: return@forEach
+                        val first =
+                            match.groupValues[1].toLongOrNull()
+                                ?: return@forEach
+                        val last =
+                            match.groupValues[2].toLongOrNull()
+                                ?: return@forEach
+                        if (last >= first) {
+                            ranges += first..last
+                        }
+                    }
+            }
 
         return result.mapValues { (_, ranges) ->
             ranges.sortedBy { it.first }
         }
     }
 
-    private fun verifyArchiveKey(key: SecretKey) {
-        val firstFile = github.listDirectory("archive")
-            .asSequence()
-            .filter { it.type == "dir" }
-            .flatMap { folder ->
-                github.listDirectory(folder.path)
-                    .asSequence()
-                    .filter { it.type == "file" && it.name.endsWith(".enc") }
-            }
-            .firstOrNull()
-            ?: return
+    private fun verifyArchiveKey(
+        key: SecretKey,
+        archiveRoot: String
+    ) {
+        val firstFile =
+            github.listDirectory(archiveRoot)
+                .asSequence()
+                .filter { it.type == "dir" }
+                .flatMap { folder ->
+                    github.listDirectory(folder.path)
+                        .asSequence()
+                        .filter {
+                            it.type == "file" &&
+                                it.name.endsWith(".enc")
+                        }
+                }
+                .firstOrNull()
+                ?: return
 
-        val remote = github.getFile(firstFile.path) ?: return
+        val remote =
+            github.getFile(firstFile.path) ?: return
 
         try {
             val plain = CryptoVault.gunzip(
@@ -144,7 +231,11 @@ class ArchiveSyncManager(
                 "The archive passphrase does not match the existing encrypted GitHub archive."
             )
         } catch (error: IllegalArgumentException) {
-            if (error.message?.contains("Unsupported encrypted archive version") == true) {
+            if (
+                error.message?.contains(
+                    "Unsupported encrypted archive version"
+                ) == true
+            ) {
                 throw IllegalArgumentException(
                     "An existing GitHub archive file uses an unsupported encryption format."
                 )
@@ -155,22 +246,31 @@ class ArchiveSyncManager(
 
     private fun loadStateLenient(
         key: SecretKey,
+        statePath: String,
         onProgress: (SyncProgress) -> Unit
     ): SyncState {
-        val remote = github.getFile("state.enc") ?: return SyncState()
+        val remote =
+            github.getFile(statePath) ?: return SyncState()
 
-        if (remote.bytes.isEmpty() || remote.bytes[0].toInt() != 1) {
+        if (
+            remote.bytes.isEmpty() ||
+            remote.bytes[0].toInt() != 1
+        ) {
             onProgress(
                 SyncProgress(
-                    stage = "Recovering from an old sync checkpoint..."
+                    stage =
+                        "Recovering from an old sync checkpoint..."
                 )
             )
             return SyncState()
         }
 
         return try {
-            val decrypted = CryptoVault.decrypt(key, remote.bytes)
-            SyncState.fromJsonBytes(CryptoVault.gunzip(decrypted))
+            val decrypted =
+                CryptoVault.decrypt(key, remote.bytes)
+            SyncState.fromJsonBytes(
+                CryptoVault.gunzip(decrypted)
+            )
         } catch (error: AEADBadTagException) {
             throw IllegalArgumentException(
                 "The archive passphrase does not match the existing encrypted GitHub archive."
@@ -178,26 +278,39 @@ class ArchiveSyncManager(
         } catch (_: Throwable) {
             onProgress(
                 SyncProgress(
-                    stage = "Checkpoint was damaged. Rebuilding safely from archive files..."
+                    stage =
+                        "Checkpoint was damaged. Rebuilding safely from archive files..."
                 )
             )
             SyncState()
         }
     }
 
-    private fun saveState(key: SecretKey, state: SyncState) {
+    private fun saveState(
+        key: SecretKey,
+        statePath: String,
+        state: SyncState
+    ) {
         val packed = CryptoVault.encrypt(
             key,
             CryptoVault.gzip(state.toJsonBytes())
         )
         github.putFile(
-            "state.enc",
+            statePath,
             packed,
             "Update Yahoo sync checkpoint"
         )
     }
 
+    private data class SyncSource(
+        val imapHost: String,
+        val archiveRoot: String,
+        val statePath: String,
+        val label: String
+    )
+
     companion object {
-        private val RANGE_REGEX = Regex("""(\d+)-(\d+)\.enc""")
+        private val RANGE_REGEX =
+            Regex("""(\d+)-(\d+)\.enc""")
     }
 }
