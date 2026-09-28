@@ -386,14 +386,18 @@ class YahooImapClient(
     ): Int = oldInWindow + downloadedRecords
 
     private fun connect(): Store {
+        val exportMode = imapHost == EXPORT_IMAP_HOST
+        val readTimeout = if (exportMode) "300000" else "90000"
+        val writeTimeout = if (exportMode) "300000" else "90000"
+
         val properties = Properties().apply {
             put("mail.store.protocol", "imaps")
             put("mail.imaps.host", imapHost)
             put("mail.imaps.port", "993")
             put("mail.imaps.ssl.enable", "true")
             put("mail.imaps.connectiontimeout", "30000")
-            put("mail.imaps.timeout", "90000")
-            put("mail.imaps.writetimeout", "90000")
+            put("mail.imaps.timeout", readTimeout)
+            put("mail.imaps.writetimeout", writeTimeout)
         }
         val session = Session.getInstance(properties)
         return session.getStore("imaps").apply {
