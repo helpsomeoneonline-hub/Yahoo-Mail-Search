@@ -169,32 +169,82 @@ class YahooImapClient(
                             }
                             folder.fetch(newMessages.toTypedArray(), fetchProfile)
 
-                            val records = newMessages.map { message ->
-                                toRecord(folder, message)
-                            }.sortedBy { it.uid }
+                            val records = mutableListOf<MailRecord>()
+                            newMessages.forEachIndexed { index, message ->
+                                val virtualProcessed =
+                                    processedMessages + oldInWindow + index
+                                val virtualFolderProcessed =
+                                    folderProcessed + oldInWindow + index
 
-                            records.chunked(ARCHIVE_BATCH).forEach { batch ->
-                                if (batch.isNotEmpty()) {
-                                    onProgress(
-                                        SyncProgress(
-                                            stage = "Uploading ${batch.size} emails to GitHub...",
-                                            folderName = folder.fullName,
-                                            folderIndex = folderIndex + 1,
-                                            folderCount = folders.size,
-                                            totalMessages = totalMessages,
-                                            processedMessages = processedMessages,
-                                            alreadyArchived = alreadyArchived,
-                                            newArchived = newArchived,
-                                            uploadedBatches = uploadedBatches,
-                                            folderProcessed = folderProcessed,
-                                            folderTotal = folderTotal
-                                        )
+                                onProgress(
+                                    SyncProgress(
+                                        stage =
+                                            "Downloading email ${index + 1} of ${newMessages.size}...",
+                                        folderName = folder.fullName,
+                                        folderIndex = folderIndex + 1,
+                                        folderCount = folders.size,
+                                        totalMessages = totalMessages,
+                                        processedMessages = virtualProcessed,
+                                        alreadyArchived = alreadyArchived,
+                                        newArchived = newArchived,
+                                        uploadedBatches = uploadedBatches,
+                                        folderProcessed = virtualFolderProcessed,
+                                        folderTotal = folderTotal
                                     )
-                                    onBatch(folder.fullName, validity, batch)
-                                    newArchived += batch.size
-                                    uploadedBatches++
-                                }
+                                )
+
+                                records += toRecord(folder, message)
+
+                                onProgress(
+                                    SyncProgress(
+                                        stage =
+                                            "Downloaded ${index + 1} of ${newMessages.size} emails",
+                                        folderName = folder.fullName,
+                                        folderIndex = folderIndex + 1,
+                                        folderCount = folders.size,
+                                        totalMessages = totalMessages,
+                                        processedMessages = virtualProcessed + 1,
+                                        alreadyArchived = alreadyArchived,
+                                        newArchived = newArchived,
+                                        uploadedBatches = uploadedBatches,
+                                        folderProcessed = virtualFolderProcessed + 1,
+                                        folderTotal = folderTotal
+                                    )
+                                )
                             }
+
+                            records.sortedBy { it.uid }
+                                .chunked(ARCHIVE_BATCH)
+                                .forEach { batch ->
+                                    if (batch.isNotEmpty()) {
+                                        onProgress(
+                                            SyncProgress(
+                                                stage = "Uploading ${batch.size} emails to GitHub...",
+                                                folderName = folder.fullName,
+                                                folderIndex = folderIndex + 1,
+                                                folderCount = folders.size,
+                                                totalMessages = totalMessages,
+                                                processedMessages =
+                                                    processedMessages + windowSizePreview(
+                                                        oldInWindow,
+                                                        records.size
+                                                    ),
+                                                alreadyArchived = alreadyArchived,
+                                                newArchived = newArchived,
+                                                uploadedBatches = uploadedBatches,
+                                                folderProcessed =
+                                                    folderProcessed + windowSizePreview(
+                                                        oldInWindow,
+                                                        records.size
+                                                    ),
+                                                folderTotal = folderTotal
+                                            )
+                                        )
+                                        onBatch(folder.fullName, validity, batch)
+                                        newArchived += batch.size
+                                        uploadedBatches++
+                                    }
+                                }
                         }
 
                         if (highestUid > 0) {
@@ -329,6 +379,11 @@ class YahooImapClient(
             runCatching { store.close() }
         }
     }
+
+    private fun windowSizePreview(
+        oldInWindow: Int,
+        downloadedRecords: Int
+    ): Int = oldInWindow + downloadedRecords
 
     private fun connect(): Store {
         val properties = Properties().apply {
