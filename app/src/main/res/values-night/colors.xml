@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="app_bg">#0B0A18</color>
+    <color name="surface_glass">#E61A1830</color>
+    <color name="surface_soft">#201E39</color>
+    <color name="text_primary">#F8F6FF</color>
+    <color name="text_secondary">#B9B3CE</color>
+    <color name="purple_primary">#8E5DFF</color>
+    <color name="purple_deep">#6D3DFF</color>
+    <color name="accent_red">#FF4660</color>
+    <color name="accent_red_soft">#3A1821</color>
+    <color name="success_green">#52D49C</color>
+    <color name="stroke_glass">#3DFFFFFF</color>
+    <color name="divider_soft">#24FFFFFF</color>
+</resources>
