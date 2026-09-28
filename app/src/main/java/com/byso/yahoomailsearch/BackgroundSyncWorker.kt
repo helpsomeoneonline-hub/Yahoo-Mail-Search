@@ -16,7 +16,7 @@ class BackgroundSyncWorker(
         if (!prefs.getBoolean(AppKeys.KEY_BACKGROUND_SYNC, true)) {
             return Result.success()
         }
-        if (!prefs.getBoolean(AppKeys.KEY_INITIAL_SYNC_COMPLETE, false)) {
+        if (!prefs.getBoolean(AppKeys.KEY_FULL_EXPORT_COMPLETE, false)) {
             return Result.success()
         }
 
@@ -41,7 +41,7 @@ class BackgroundSyncWorker(
                 githubToken = githubToken,
                 archivePassphrase = passphrase,
                 cache = cache
-            ).sync { progress ->
+            ).sync(ArchiveSyncMode.LIVE_INCREMENTAL) { progress ->
                 if (progress.complete) {
                     prefs.edit()
                         .putInt(AppKeys.KEY_LAST_TOTAL, progress.totalMessages)
