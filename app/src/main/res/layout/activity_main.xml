@@ -135,7 +135,7 @@
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:layout_marginTop="12dp"
-            android:text="Test & Save Connections"
+            android:text="Test &amp; Save Connections"
             android:textAllCaps="false" />
 
         <Button
