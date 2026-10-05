@@ -11,8 +11,8 @@ android {
         applicationId = "com.byso.yahoomailsearch"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.0.7"
+        versionCode = 10
+        versionName = "2.0.0"
     }
 
     compileOptions {
