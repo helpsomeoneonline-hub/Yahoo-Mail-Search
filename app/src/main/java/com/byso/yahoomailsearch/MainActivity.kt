@@ -117,7 +117,7 @@ class MainActivity : AppCompatActivity() {
         val now = System.currentTimeMillis()
         val cutoff = now - FIVE_DAYS_MS
         binding.fiveDayLabel.text =
-            "Sheet: 1 Oct 2026 → today  •  Bank email window: ${formatter.format(Date(cutoff))} → ${formatter.format(Date(now))}"
+            "Sheet: 1 Oct 2026 → today  •  Bank emails: ${formatter.format(Date(cutoff))} → ${formatter.format(Date(now))}\nTransfer allowance: 2 banking days (weekends excluded)"
     }
 
     private fun inputs(): Inputs? {
