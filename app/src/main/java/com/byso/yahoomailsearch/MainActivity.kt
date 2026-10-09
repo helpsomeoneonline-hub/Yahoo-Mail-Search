@@ -117,7 +117,7 @@ class MainActivity : AppCompatActivity() {
         val now = System.currentTimeMillis()
         val cutoff = now - FIVE_DAYS_MS
         binding.fiveDayLabel.text =
-            "Email window: ${formatter.format(Date(cutoff))} → ${formatter.format(Date(now))}"
+            "Sheet: 1 Oct 2026 → today  •  Bank email window: ${formatter.format(Date(cutoff))} → ${formatter.format(Date(now))}"
     }
 
     private fun inputs(): Inputs? {
@@ -208,13 +208,19 @@ class MainActivity : AppCompatActivity() {
             append(result.missingFromSheet)
             append("   •   Needs review: ")
             append(result.needsReview)
+            append("\nAwaiting bank arrival: ")
+            append(result.awaitingBank)
+            append("   •   Older than email scan: ")
+            append(result.outsideBankWindow)
         }
 
         val order = mapOf(
             MatchStatus.NEEDS_REVIEW to 0,
             MatchStatus.MISSING_FROM_SHEET to 1,
             MatchStatus.NO_BANK_EMAIL_MATCH to 2,
-            MatchStatus.MATCHED to 3
+            MatchStatus.AWAITING_BANK to 3,
+            MatchStatus.MATCHED to 4,
+            MatchStatus.OUTSIDE_BANK_WINDOW to 5
         )
 
         result.rows.sortedBy { order[it.status] ?: 99 }.forEach { row ->
@@ -222,7 +228,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.statusText.text =
-            "✓ Reconciliation complete — only the last 5 days were checked."
+            "✓ Checked October 1 to today in Bookkeeping 2026 against Republic emails from the last 5 days."
     }
 
     private fun addResultCard(row: ReconciliationRow) {
@@ -240,10 +246,12 @@ class MainActivity : AppCompatActivity() {
 
         val title = TextView(this).apply {
             text = when (row.status) {
-                MatchStatus.MATCHED -> "✓ MATCHED"
-                MatchStatus.MISSING_FROM_SHEET -> "⚠ MISSING FROM SHEET"
+                MatchStatus.MATCHED -> "✓ AMOUNT + DATE MATCH"
+                MatchStatus.MISSING_FROM_SHEET -> "⚠ BANK PAYMENT — NOT IN SHEET"
                 MatchStatus.NO_BANK_EMAIL_MATCH -> "◌ SHEET ROW — NO BANK EMAIL"
-                MatchStatus.NEEDS_REVIEW -> "? NEEDS REVIEW"
+                MatchStatus.AWAITING_BANK -> "◷ AWAITING BANK ARRIVAL"
+                MatchStatus.OUTSIDE_BANK_WINDOW -> "◌ OUTSIDE 5-DAY EMAIL SCAN"
+                MatchStatus.NEEDS_REVIEW -> "? POSSIBLE MATCH — REVIEW"
             }
             setTextColor(
                 ContextCompat.getColor(
