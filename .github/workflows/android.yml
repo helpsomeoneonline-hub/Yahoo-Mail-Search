@@ -41,6 +41,9 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Test reconciliation rules
+        run: gradle --no-daemon :app:testDebugUnitTest --stacktrace
+
       - name: Build debug APK
         env:
           # Non-secret optional email prefill; do not embed the Yahoo app password.
