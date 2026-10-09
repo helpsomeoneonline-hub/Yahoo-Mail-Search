@@ -23,25 +23,6 @@ android {
         buildConfigField("String", "DEFAULT_YAHOO_EMAIL", "\"$initialEmail\"")
     }
 
-    // A single private signing key is required to keep Android updates installable.
-    val keystorePath = System.getenv("ANDROID_SIGNING_KEYSTORE").orEmpty()
-    val signingPassword = System.getenv("ANDROID_SIGNING_PASSWORD").orEmpty()
-    if (keystorePath.isNotBlank() && signingPassword.isNotBlank()) {
-        signingConfigs {
-            create("persistent") {
-                storeFile = file(keystorePath)
-                storePassword = signingPassword
-                keyAlias = "republic-reconcile"
-                keyPassword = signingPassword
-            }
-        }
-        buildTypes {
-            getByName("debug") {
-                signingConfig = signingConfigs.getByName("persistent")
-            }
-        }
-    }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
