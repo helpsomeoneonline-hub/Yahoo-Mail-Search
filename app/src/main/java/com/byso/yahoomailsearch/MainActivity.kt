@@ -34,6 +34,11 @@ class MainActivity : AppCompatActivity() {
         updateDateWindow()
 
         binding.saveTestButton.setOnClickListener { testAndSave() }
+        binding.changeAccountButton.setOnClickListener {
+            setAccountFormVisibility(true)
+            binding.yahooEmail.requestFocus()
+            binding.statusText.text = "Update the Yahoo account, then test and save."
+        }
         binding.reconcileButton.setOnClickListener { runReconciliation() }
         binding.clearResultsButton.setOnClickListener {
             binding.resultsContainer.removeAllViews()
@@ -70,18 +75,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun restoreSettings() {
-        binding.yahooEmail.setText(securePrefs.get(AppKeys.KEY_EMAIL))
-        binding.yahooAppPassword.setText(securePrefs.get(AppKeys.KEY_YAHOO_PASSWORD))
+        val savedEmail = securePrefs.get(AppKeys.KEY_EMAIL)
+        val savedPassword = securePrefs.get(AppKeys.KEY_YAHOO_PASSWORD)
+        binding.yahooEmail.setText(
+            savedEmail.ifBlank { BuildConfig.DEFAULT_YAHOO_EMAIL.trim() }
+        )
+        binding.yahooAppPassword.setText(savedPassword)
 
         val prefs = getSharedPreferences(AppKeys.PREFS_APP, Context.MODE_PRIVATE)
         binding.sheetUrl.setText(prefs.getString(KEY_SHEET_URL, "").orEmpty())
 
-        binding.statusText.text =
-            if (binding.yahooEmail.text.isNullOrBlank()) {
-                "Enter your Yahoo app details and Google Sheet link."
-            } else {
-                "Ready. Last 5 days • Republic Bank only."
-            }
+        val hasSavedAccount = savedEmail.isNotBlank() && savedPassword.isNotBlank()
+        setAccountFormVisibility(!hasSavedAccount)
+        binding.statusText.text = when {
+            hasSavedAccount && !binding.sheetUrl.text.isNullOrBlank() ->
+                "Ready. Yahoo login saved. Check the last 5 days when ready."
+            hasSavedAccount ->
+                "Yahoo login saved. Enter the Google Sheet link to reconcile."
+            else ->
+                "First setup: enter your Yahoo app password once. It will be encrypted on this phone."
+        }
+    }
+
+    private fun setAccountFormVisibility(showForm: Boolean) {
+        val formVisibility = if (showForm) View.VISIBLE else View.GONE
+        val savedVisibility = if (showForm) View.GONE else View.VISIBLE
+        binding.yahooEmail.visibility = formVisibility
+        binding.yahooAppPassword.visibility = formVisibility
+        binding.saveTestButton.visibility = formVisibility
+        binding.accountSavedLabel.visibility = savedVisibility
+        binding.changeAccountButton.visibility = savedVisibility
+        if (!showForm) {
+            binding.accountSavedLabel.text =
+                "✓ Yahoo account saved: " + binding.yahooEmail.text.toString().trim() + "\n" +
+                "App password protected by Android Keystore."
+        }
     }
 
     private fun updateDateWindow() {
@@ -130,7 +158,8 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 binding.statusText.text =
                     "✓ Connected. Google Sheet loaded ${sheetEntries.size} usable rows."
-                toast("Connection successful.")
+                setAccountFormVisibility(false)
+                toast("Login saved securely. Next time, just check your emails.")
             }
         }
     }
