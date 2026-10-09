@@ -50,3 +50,16 @@ The first synchronization of a very large mailbox can take many network operatio
 - Optional first-run email prefill: add the GitHub **repository variable** `YAHOO_EMAIL` under Settings → Secrets and variables → Actions → Variables, then rebuild. Email addresses baked into APKs are readable to anyone with the APK.
 - A GitHub Actions secret called `YAHOO_APP_PASSWORD` is not accessible to the installed Android app. **Never put this password into the APK or source repository.** Enter it once on the phone.
 - When Android removes app data or the app is reinstalled, locally saved credentials may need to be entered again.
+
+
+## Permanent APK update signing (v2.0.2+)
+
+Android only permits in-place APK updates when both the package name and signing certificate match, and the new `versionCode` increases. Previous GitHub Actions debug builds used runner-generated debug signing keys and therefore may require a **one-time uninstall** when switching to permanent signing. Back up important app configuration before uninstalling; Android Keystore saved credentials cannot be guaranteed to survive reinstall.
+
+The Android build workflow now **requires two private GitHub Actions repository secrets**:
+- `ANDROID_SIGNING_KEY_B64`: base64 text of the permanent PKCS12 keystore.
+- `ANDROID_SIGNING_PASSWORD`: password of that keystore and its `republic-reconcile` private-key entry.
+
+Private setup materials are provided to the account owner separately. Never commit the keystore, base64 text, or password to the public repository, screenshots, issues, or workflow source. After these two secrets are configured, run **Build Android APK** under Actions. Download the artifact `Republic-Reconcile-debug`; it contains the updateable `app-debug.apk`. All later versions must use exactly these same signing secrets. Store an offline backup of the keystore and password; if lost, Android will reject in-place updates signed by replacement keys.
+
+The signing key is independent of your Yahoo app password. `YAHOO_APP_PASSWORD` is **not** passed to the APK build. Enter that Yahoo credential into the app once on its first installation, and Android Keystore saves it for future use.
