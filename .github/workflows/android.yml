@@ -41,10 +41,26 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Restore stable signing key
+        shell: bash
+        env:
+          KEY_B64: ${{ secrets.ANDROID_SIGNING_KEY_B64 }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_PASSWORD }}
+        run: |
+          if [ -z "$KEY_B64" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Set ANDROID_SIGNING_KEY_B64 and ANDROID_SIGNING_PASSWORD in the repository's Actions secrets before building an updateable APK."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$KEY_B64" | base64 --decode > "$RUNNER_TEMP/republic-reconcile.jks"
+          keytool -list -keystore "$RUNNER_TEMP/republic-reconcile.jks" -storepass "$KEY_PASSWORD" -alias republic-reconcile >/dev/null
+          echo "ANDROID_SIGNING_KEYSTORE=$RUNNER_TEMP/republic-reconcile.jks" >> "$GITHUB_ENV"
+
       - name: Build debug APK
         env:
-          # An email is a non-secret prefill; never inject YAHOO_APP_PASSWORD into an APK.
+          # Never embed the Yahoo app password inside an APK.
           YAHOO_EMAIL: ${{ vars.YAHOO_EMAIL }}
+          ANDROID_SIGNING_PASSWORD: ${{ secrets.ANDROID_SIGNING_PASSWORD }}
         run: gradle --no-daemon :app:assembleDebug --stacktrace
 
       - name: Upload APK
