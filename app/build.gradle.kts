@@ -11,8 +11,8 @@ android {
         applicationId = "com.byso.yahoomailsearch"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "2.0.1"
+        versionCode = 12
+        versionName = "2.0.2"
 
         // Optional non-secret email prefill. Never embed Yahoo app passwords in an APK.
         val initialEmail = (System.getenv("YAHOO_EMAIL") ?: "")
@@ -21,6 +21,25 @@ android {
             .replace("\n", "")
             .replace("\r", "")
         buildConfigField("String", "DEFAULT_YAHOO_EMAIL", "\"$initialEmail\"")
+    }
+
+    // A single private signing key is required to keep Android updates installable.
+    val keystorePath = System.getenv("ANDROID_SIGNING_KEYSTORE").orEmpty()
+    val signingPassword = System.getenv("ANDROID_SIGNING_PASSWORD").orEmpty()
+    if (keystorePath.isNotBlank() && signingPassword.isNotBlank()) {
+        signingConfigs {
+            create("persistent") {
+                storeFile = file(keystorePath)
+                storePassword = signingPassword
+                keyAlias = "republic-reconcile"
+                keyPassword = signingPassword
+            }
+        }
+        buildTypes {
+            getByName("debug") {
+                signingConfig = signingConfigs.getByName("persistent")
+            }
+        }
     }
 
     compileOptions {
