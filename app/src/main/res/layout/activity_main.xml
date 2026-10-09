@@ -60,6 +60,25 @@
                 android:textSize="17sp"
                 android:textStyle="bold" />
 
+            <TextView
+                android:id="@+id/accountSavedLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Yahoo account saved on this phone"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/changeAccountButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Change Yahoo account or app password"
+                android:textAllCaps="false"
+                android:visibility="gone" />
+
             <EditText
                 android:id="@+id/yahooEmail"
                 android:layout_width="match_parent"
@@ -88,7 +107,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Credentials stay encrypted on this phone. The app only opens mail read-only."
+                android:text="Your app password is encrypted on this phone, not built into the APK. Email is accessed read-only."
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp" />
         </LinearLayout>
