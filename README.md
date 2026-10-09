@@ -40,3 +40,13 @@ Run the **Build Android APK** workflow in GitHub Actions. The workflow uploads `
 ## Important
 
 The first synchronization of a very large mailbox can take many network operations. Attachments are indexed by filename in v0.1, but attachment file bytes are not archived yet.
+
+
+## Easier one-time Yahoo login (v2.0.1)
+
+- On first launch, enter your Yahoo email address (if not prefilled), Yahoo **app password**, and Google Sheet URL, then tap **Test & Save Connections**.
+- The app encrypts your credentials using Android Keystore. On later launches it hides the login fields, shows the saved Yahoo account, and lets you tap **Check Last 5 Days Now** without retyping credentials.
+- Use **Change Yahoo account or app password** to update a password or switch accounts.
+- Optional first-run email prefill: add the GitHub **repository variable** `YAHOO_EMAIL` under Settings → Secrets and variables → Actions → Variables, then rebuild. Email addresses baked into APKs are readable to anyone with the APK.
+- A GitHub Actions secret called `YAHOO_APP_PASSWORD` is not accessible to the installed Android app. **Never put this password into the APK or source repository.** Enter it once on the phone.
+- When Android removes app data or the app is reinstalled, locally saved credentials may need to be entered again.
