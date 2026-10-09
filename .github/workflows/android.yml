@@ -42,6 +42,9 @@ jobs:
           gradle-version: "8.9"
 
       - name: Build debug APK
+        env:
+          # An email is a non-secret prefill; never inject YAHOO_APP_PASSWORD into an APK.
+          YAHOO_EMAIL: ${{ vars.YAHOO_EMAIL }}
         run: gradle --no-daemon :app:assembleDebug --stacktrace
 
       - name: Upload APK
