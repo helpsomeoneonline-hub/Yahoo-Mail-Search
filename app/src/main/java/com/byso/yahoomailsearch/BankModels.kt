@@ -24,6 +24,8 @@ enum class MatchStatus {
     MATCHED,
     MISSING_FROM_SHEET,
     NO_BANK_EMAIL_MATCH,
+    AWAITING_BANK,
+    OUTSIDE_BANK_WINDOW,
     NEEDS_REVIEW
 }
 
@@ -44,4 +46,6 @@ data class ReconciliationResult(
     val missingFromSheet: Int get() = rows.count { it.status == MatchStatus.MISSING_FROM_SHEET }
     val noBankEmailMatch: Int get() = rows.count { it.status == MatchStatus.NO_BANK_EMAIL_MATCH }
     val needsReview: Int get() = rows.count { it.status == MatchStatus.NEEDS_REVIEW }
+    val awaitingBank: Int get() = rows.count { it.status == MatchStatus.AWAITING_BANK }
+    val outsideBankWindow: Int get() = rows.count { it.status == MatchStatus.OUTSIDE_BANK_WINDOW }
 }
