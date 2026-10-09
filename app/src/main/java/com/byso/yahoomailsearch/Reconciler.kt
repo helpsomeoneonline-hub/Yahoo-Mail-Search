@@ -2,8 +2,8 @@ package com.byso.yahoomailsearch
 
 import java.time.Instant
 import java.time.LocalDate
+import java.time.DayOfWeek
 import java.time.ZoneId
-import java.time.temporal.ChronoUnit
 import kotlin.math.abs
 
 object Reconciler {
@@ -35,7 +35,7 @@ object Reconciler {
                 sheet.amount != null && abs(sheet.amount - bank.amount) < 0.01
             }
             val timelyMatches = sameAmount.filter { sheet ->
-                paymentDelayDays(sheet, bank.emailDateMs)?.let { it in 0L..2L } == true
+                bankingDelayDays(sheet, bank.emailDateMs)?.let { it in 0L..2L } == true
             }
             if (timelyMatches.isEmpty()) {
                 rows += ReconciliationRow(
@@ -50,7 +50,7 @@ object Reconciler {
                         "No October 2026 Republic Bank bookkeeping sale has this amount."
                     } else {
                         "This amount exists in October bookkeeping, but no entry is dated " +
-                            "within two days before this bank notification. Check dates."
+                            "within two banking days (excluding weekends) before this bank notification. Check dates."
                     }
                 )
                 return@forEach
@@ -59,10 +59,10 @@ object Reconciler {
             val best = timelyMatches.maxByOrNull { sheet -> score(bank, sheet) }!!
             val totalPossible = sheetEntries.count { sheet ->
                 sheet.amount != null && abs(sheet.amount - bank.amount) < 0.01 &&
-                    paymentDelayDays(sheet, bank.emailDateMs)?.let { it in 0L..2L } == true
+                    bankingDelayDays(sheet, bank.emailDateMs)?.let { it in 0L..2L } == true
             }
             val ambiguous = totalPossible > 1
-            val delay = paymentDelayDays(best, bank.emailDateMs) ?: 0L
+            val delay = bankingDelayDays(best, bank.emailDateMs) ?: 0L
             rows += ReconciliationRow(
                 bank = bank,
                 sheet = best,
@@ -72,7 +72,7 @@ object Reconciler {
                         "have this amount. Verify the customer or transfer reference."
                 } else {
                     "Unique amount and compatible date. Bank notification arrived " +
-                        delay + " calendar day(s) after the sheet entry."
+                        delay + " banking day(s) after the sheet entry (weekends excluded)."
                 }
             )
             unusedSheet.remove(best)
@@ -85,19 +85,19 @@ object Reconciler {
             val possibleEmail = bankTransactions.any { bank ->
                 bank.amount != null && sheet.amount != null &&
                     abs(bank.amount - sheet.amount) < 0.01 &&
-                    paymentDelayDays(sheet, bank.emailDateMs)?.let { it in 0L..2L } == true
+                    bankingDelayDays(sheet, bank.emailDateMs)?.let { it in 0L..2L } == true
             }
 
             val status = when {
                 sheetDate == null -> MatchStatus.NEEDS_REVIEW
-                !sheetDate.plusDays(2).isBefore(today) -> MatchStatus.AWAITING_BANK
+                !addBankingDays(sheetDate, 2).isBefore(today) -> MatchStatus.AWAITING_BANK
                 !sheetDate.isAfter(bankScanStart) -> MatchStatus.OUTSIDE_BANK_WINDOW
                 possibleEmail -> MatchStatus.NEEDS_REVIEW
                 else -> MatchStatus.NO_BANK_EMAIL_MATCH
             }
             val reason = when (status) {
                 MatchStatus.AWAITING_BANK ->
-                    "Allow up to two days for an interbank transfer to reach Republic Bank."
+                    "Allow up to two banking days (weekends excluded) for an interbank transfer. Public holidays may delay it further."
                 MatchStatus.OUTSIDE_BANK_WINDOW ->
                     "This sale is older than the five-day bank email search, so its " +
                         "possible bank notifications were not fully checked."
@@ -120,16 +120,43 @@ object Reconciler {
         )
     }
 
-    private fun paymentDelayDays(sheet: SheetEntry, bankTimestamp: Long): Long? {
+    // Only Monday-Friday count as banking days. A Friday transfer can arrive
+    // on Monday (1 banking day) or Tuesday (2 banking days).
+    // Public holidays are not yet included and may require manual review.
+    private fun addBankingDays(start: LocalDate, count: Int): LocalDate {
+        var date = start
+        var remaining = count
+        while (remaining > 0) {
+            date = date.plusDays(1)
+            if (date.dayOfWeek != DayOfWeek.SATURDAY &&
+                date.dayOfWeek != DayOfWeek.SUNDAY
+            ) remaining--
+        }
+        return date
+    }
+
+    private fun bankingDelayDays(sheet: SheetEntry, bankTimestamp: Long): Long? {
         val sheetTime = sheet.dateMs ?: return null
         val sheetDate = Instant.ofEpochMilli(sheetTime).atZone(zone).toLocalDate()
         val bankDate = Instant.ofEpochMilli(bankTimestamp).atZone(zone).toLocalDate()
-        return ChronoUnit.DAYS.between(sheetDate, bankDate)
+        if (bankDate.isBefore(sheetDate)) return null
+
+        var day = sheetDate
+        var bankingDays = 0L
+        while (day.isBefore(bankDate)) {
+            day = day.plusDays(1)
+            if (day.dayOfWeek != DayOfWeek.SATURDAY &&
+                day.dayOfWeek != DayOfWeek.SUNDAY
+            ) bankingDays++
+            // Values >2 are all out of range, so avoid scanning long intervals.
+            if (bankingDays > 2L) return bankingDays
+        }
+        return bankingDays
     }
 
     private fun score(bank: BankTransaction, sheet: SheetEntry): Int {
         var points = 0
-        points += when (paymentDelayDays(sheet, bank.emailDateMs)) {
+        points += when (bankingDelayDays(sheet, bank.emailDateMs)) {
             0L -> 30
             1L -> 20
             2L -> 10
