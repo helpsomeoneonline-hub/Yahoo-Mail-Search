@@ -2,7 +2,10 @@ package com.byso.yahoomailsearch
 
 import java.net.HttpURLConnection
 import java.net.URL
-import java.text.SimpleDateFormat
+import java.time.LocalDate
+import java.time.Month
+import java.time.YearMonth
+import java.time.ZoneId
 import java.util.Locale
 
 class GoogleSheetCsvClient {
@@ -31,104 +34,90 @@ class GoogleSheetCsvClient {
 
     private fun toCsvUrl(input: String): String {
         val value = input.trim()
-        if (value.contains("format=csv", ignoreCase = true) ||
-            value.endsWith(".csv", ignoreCase = true)
-        ) {
-            return value
-        }
-
         val id = Regex("""/spreadsheets/d/([a-zA-Z0-9_-]+)""")
-            .find(value)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?: error("Paste a valid Google Sheets link or CSV export URL.")
+            .find(value)?.groupValues?.getOrNull(1)
+            ?: error("Paste a Google Sheets link (not an unrelated CSV).")
 
-        val gid = Regex("""(?:[#?&]gid=)(\d+)""")
-            .find(value)
-            ?.groupValues
-            ?.getOrNull(1)
-
-        return buildString {
-            append("https://docs.google.com/spreadsheets/d/")
-            append(id)
-            append("/export?format=csv")
-            if (!gid.isNullOrBlank()) {
-                append("&gid=")
-                append(gid)
-            }
+        // This reconciler is explicitly configured for the user's bookkeeping tab.
+        if (id != BOOKKEEPING_SPREADSHEET_ID) {
+            error("This app is configured for the Bookkeeping 2026 spreadsheet. Paste its link.")
         }
+
+        return "https://docs.google.com/spreadsheets/d/" + id +
+            "/export?format=csv&gid=" + BOOKKEEPING_TAB_GID
     }
 
-    private fun parseEntries(csv: String): List<SheetEntry> {
-        val rows = parseCsv(csv).filter { row -> row.any { it.isNotBlank() } }
-        if (rows.isEmpty()) return emptyList()
+    internal fun parseEntries(csv: String): List<SheetEntry> {
+        // Keep physical row numbers (including blanks), because results link to sheet rows.
+        val rows = parseCsv(csv)
+        val startDate = LocalDate.of(2026, 10, 1)
+        val today = LocalDate.now(ZoneId.of("America/Port_of_Spain"))
+        var activeMonth: YearMonth? = null
+        var dateColumn = 2    // C: "Date" is a day-of-month number
+        var amountColumn = 8  // I: "Markup Price" is the TTD sale received
+        var bankColumn = 9    // J: Bank Type
+        var orderColumn = 1   // B: Skybox / customer number
+        var siteColumn = 3    // D: Site
 
-        val header = rows.first().map { it.trim().lowercase() }
-        val hasHeader = header.any {
-            it.contains("date") ||
-                it.contains("amount") ||
-                it.contains("description") ||
-                it.contains("reference") ||
-                it.contains("details")
+        return rows.mapIndexedNotNull { index, row ->
+            val first = row.firstOrNull().orEmpty().trim()
+            val monthMatch = MONTH_HEADING.matchEntire(first)
+            if (monthMatch != null) {
+                val month = Month.valueOf(monthMatch.groupValues[1].uppercase(Locale.US))
+                val year = monthMatch.groupValues[2].toInt()
+                activeMonth = YearMonth.of(year, month)
+                return@mapIndexedNotNull null
+            }
+
+            // Different month sections repeat headers; never treat a header as a payment.
+            val header = row.map { it.trim().lowercase(Locale.US) }
+            val headerDate = header.indexOfFirst { it == "date" }
+            val headerPrice = header.indexOfFirst { it == "markup price" }
+            if (headerDate >= 0 && headerPrice >= 0) {
+                dateColumn = headerDate
+                amountColumn = headerPrice
+                val bankHeader = header.indexOfFirst { it == "bank type" }
+                bankColumn = if (bankHeader >= 0) bankHeader else 9
+                orderColumn = header.indexOfFirst { it == "skybox no#" }
+                    .takeIf { it >= 0 } ?: 1
+                siteColumn = header.indexOfFirst { it == "site" }
+                    .takeIf { it >= 0 } ?: 3
+                return@mapIndexedNotNull null
+            }
+
+            val month = activeMonth ?: return@mapIndexedNotNull null
+            val day = row.getOrNull(dateColumn)?.trim()?.toIntOrNull()
+                ?: return@mapIndexedNotNull null
+            if (day !in 1..month.lengthOfMonth()) return@mapIndexedNotNull null
+
+            val date = month.atDay(day)
+            if (date.isBefore(startDate) || date.isAfter(today)) {
+                return@mapIndexedNotNull null
+            }
+
+            // A Republic email cannot confirm a sale deposited into Scotia or Royal.
+            val bankType = row.getOrNull(bankColumn)?.trim().orEmpty()
+            if (!bankType.contains("republic", ignoreCase = true)) {
+                return@mapIndexedNotNull null
+            }
+
+            val amount = parseAmount(row.getOrNull(amountColumn).orEmpty())
+                ?: return@mapIndexedNotNull null
+            if (amount <= 0) return@mapIndexedNotNull null
+
+            val customer = row.getOrNull(orderColumn)?.trim().orEmpty()
+            val site = row.getOrNull(siteColumn)?.trim().orEmpty()
+            SheetEntry(
+                rowNumber = index + 1,
+                dateMs = date.atStartOfDay(ZoneId.of("America/Port_of_Spain"))
+                    .toInstant().toEpochMilli(),
+                amount = amount,
+                description = listOf(customer, site).filter { it.isNotBlank() }
+                    .joinToString(" • ").ifBlank { "Bookkeeping sale" },
+                reference = customer,
+                raw = row.joinToString(" | ")
+            )
         }
-
-        val dateIndex = findColumn(header, listOf("date", "transaction date", "day"))
-        val amountIndex = findColumn(header, listOf("amount", "ttd", "value", "total", "paid"))
-        val descriptionIndex = findColumn(
-            header,
-            listOf("description", "details", "narration", "note", "name", "customer")
-        )
-        val referenceIndex = findColumn(
-            header,
-            listOf("reference", "ref", "transaction id", "receipt", "id")
-        )
-
-        val dataRows = if (hasHeader) rows.drop(1) else rows
-        val offset = if (hasHeader) 2 else 1
-
-        return dataRows.mapIndexedNotNull { index, row ->
-            val amount = when {
-                amountIndex >= 0 -> parseAmount(row.getOrNull(amountIndex).orEmpty())
-                else -> row.firstNotNullOfOrNull { parseAmount(it) }
-            }
-            val dateMs = when {
-                dateIndex >= 0 -> parseDate(row.getOrNull(dateIndex).orEmpty())
-                else -> row.firstNotNullOfOrNull { parseDate(it) }
-            }
-            val description = when {
-                descriptionIndex >= 0 -> row.getOrNull(descriptionIndex).orEmpty().trim()
-                else -> row.joinToString(" | ").trim()
-            }
-            val reference = when {
-                referenceIndex >= 0 -> row.getOrNull(referenceIndex).orEmpty().trim()
-                else -> ""
-            }
-
-            if (amount == null && dateMs == null && description.isBlank()) {
-                null
-            } else {
-                SheetEntry(
-                    rowNumber = index + offset,
-                    dateMs = dateMs,
-                    amount = amount,
-                    description = description,
-                    reference = reference,
-                    raw = row.joinToString(" | ")
-                )
-            }
-        }
-    }
-
-    private fun findColumn(header: List<String>, names: List<String>): Int {
-        names.forEach { name ->
-            val exact = header.indexOfFirst { it == name }
-            if (exact >= 0) return exact
-        }
-        names.forEach { name ->
-            val partial = header.indexOfFirst { it.contains(name) }
-            if (partial >= 0) return partial
-        }
-        return -1
     }
 
     private fun parseAmount(value: String): Double? {
@@ -138,21 +127,8 @@ class GoogleSheetCsvClient {
             .replace("TT$", "", ignoreCase = true)
             .replace("$", "")
             .trim()
-
         if (!cleaned.matches(Regex("""-?\d+(?:\.\d{1,2})?"""))) return null
-        return cleaned.toDoubleOrNull()?.let { kotlin.math.abs(it) }
-    }
-
-    private fun parseDate(value: String): Long? {
-        val text = value.trim()
-        if (text.length !in 6..30) return null
-
-        DATE_PATTERNS.forEach { pattern ->
-            val parser = SimpleDateFormat(pattern, Locale.US)
-            parser.isLenient = false
-            runCatching { parser.parse(text)?.time }.getOrNull()?.let { return it }
-        }
-        return null
+        return cleaned.toDoubleOrNull()?.let(kotlin.math::abs)
     }
 
     private fun parseCsv(text: String): List<List<String>> {
@@ -196,18 +172,12 @@ class GoogleSheetCsvClient {
     }
 
     companion object {
-        private val DATE_PATTERNS = listOf(
-            "M/d/yyyy",
-            "MM/dd/yyyy",
-            "d/M/yyyy",
-            "dd/MM/yyyy",
-            "yyyy-MM-dd",
-            "dd-MM-yyyy",
-            "MMM d, yyyy",
-            "d MMM yyyy",
-            "M/d/yyyy h:mm a",
-            "d/M/yyyy h:mm a",
-            "yyyy-MM-dd HH:mm:ss"
+        private const val BOOKKEEPING_SPREADSHEET_ID =
+            "1AnlIZJFyo99j3_0OHbL3P_QOlBKJCTvL7VoLQhWjwDM"
+        private const val BOOKKEEPING_TAB_GID = "578904948"
+        private val MONTH_HEADING = Regex(
+            """(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})""",
+            RegexOption.IGNORE_CASE
         )
     }
 }
