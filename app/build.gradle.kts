@@ -11,8 +11,16 @@ android {
         applicationId = "com.byso.yahoomailsearch"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "2.0.0"
+        versionCode = 11
+        versionName = "2.0.1"
+
+        // Optional non-secret email prefill. Never embed Yahoo app passwords in an APK.
+        val initialEmail = (System.getenv("YAHOO_EMAIL") ?: "")
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "")
+            .replace("\r", "")
+        buildConfigField("String", "DEFAULT_YAHOO_EMAIL", "\"$initialEmail\"")
     }
 
     compileOptions {
