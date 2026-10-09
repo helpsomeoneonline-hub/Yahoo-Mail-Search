@@ -38,11 +38,7 @@ class GoogleSheetCsvClient {
             .find(value)?.groupValues?.getOrNull(1)
             ?: error("Paste a Google Sheets link (not an unrelated CSV).")
 
-        // This reconciler is explicitly configured for the user's bookkeeping tab.
-        if (id != BOOKKEEPING_SPREADSHEET_ID) {
-            error("This app is configured for the Bookkeeping 2026 spreadsheet. Paste its link.")
-        }
-
+        // Always use the bookkeeping tab even when the shared link omits its gid.
         return "https://docs.google.com/spreadsheets/d/" + id +
             "/export?format=csv&gid=" + BOOKKEEPING_TAB_GID
     }
@@ -128,7 +124,7 @@ class GoogleSheetCsvClient {
             .replace("$", "")
             .trim()
         if (!cleaned.matches(Regex("""-?\d+(?:\.\d{1,2})?"""))) return null
-        return cleaned.toDoubleOrNull()?.let(kotlin.math::abs)
+        return cleaned.toDoubleOrNull()?.let { kotlin.math.abs(it) }
     }
 
     private fun parseCsv(text: String): List<List<String>> {
@@ -172,8 +168,6 @@ class GoogleSheetCsvClient {
     }
 
     companion object {
-        private const val BOOKKEEPING_SPREADSHEET_ID =
-            "1AnlIZJFyo99j3_0OHbL3P_QOlBKJCTvL7VoLQhWjwDM"
         private const val BOOKKEEPING_TAB_GID = "578904948"
         private val MONTH_HEADING = Regex(
             """(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})""",
