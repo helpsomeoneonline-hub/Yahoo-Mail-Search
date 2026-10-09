@@ -19,7 +19,11 @@ object TransactionParser {
         }
 
         val amount = findAmount(combined)
-        val reference = referenceRegex.find(combined)?.groupValues?.getOrNull(1).orEmpty()
+        val reference = referenceRegex.find(combined)
+            ?.groupValues?.getOrNull(1).orEmpty()
+            .takeUnless { it.equals("number", true) || it.equals("reference", true) ||
+                it.equals("transfer", true) || it.equals("details", true) }
+            .orEmpty()
         val description = bestDescription(record.subject, record.body)
 
         return BankTransaction(
