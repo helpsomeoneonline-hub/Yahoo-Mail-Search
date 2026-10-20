@@ -50,6 +50,12 @@ jobs:
           YAHOO_EMAIL: ${{ vars.YAHOO_EMAIL }}
         run: gradle --no-daemon :app:assembleDebug --stacktrace
 
+      - name: Sign and verify permanent APK certificate
+        env:
+          ANDROID_SIGNING_KEYSTORE_B64: ${{ secrets.ANDROID_SIGNING_KEYSTORE_B64 }}
+          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+          ANDROID_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+        run: bash scripts/sign-github-apk.sh app/build/outputs/apk/debug/app-debug.apk
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
